@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "把浏览器里重复、规则清楚的体力活交给 Agent。",
+  "description": "在你已经登录的浏览器里替你干活的通用 Agent。",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/little077/pagehand.git"

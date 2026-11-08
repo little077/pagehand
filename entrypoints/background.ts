@@ -32,10 +32,6 @@ export default defineBackground(() => {
 
   async function handleMessage(message: UiToBg): Promise<void> {
     switch (message.type) {
-      // 收到即算一次长连接活动，用于重置 Service Worker 的 30 秒空闲计时。
-      case 'ping': {
-        return;
-      }
       case 'hello': {
         await configReady;
         try {
@@ -82,6 +78,10 @@ export default defineBackground(() => {
       }
       case 'delete_session': {
         await session.deleteSession(message.id);
+        return;
+      }
+      case 'respond_interaction': {
+        session.respondInteraction(message);
         return;
       }
       case 'list_models': {
