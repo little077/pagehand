@@ -5,6 +5,7 @@ import {
   Files,
   FileText,
   Loader2,
+  MessageCircleQuestion,
   TextSelect,
   Wrench,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ const TOOL_LABELS: Record<string, string> = {
   list_tabs: '列出标签页',
   read_tab: '读取指定标签页',
   read_selection: '读取选中文本',
+  ask_user: '向你提问',
 };
 
 const TOOL_ICONS: Record<string, typeof FileText> = {
@@ -25,6 +27,7 @@ const TOOL_ICONS: Record<string, typeof FileText> = {
   list_tabs: Files,
   read_tab: FileText,
   read_selection: TextSelect,
+  ask_user: MessageCircleQuestion,
 };
 
 function formatDuration(ms: number): string {

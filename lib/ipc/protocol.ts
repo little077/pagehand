@@ -1,3 +1,4 @@
+import type { AskQuestion, InteractionStatus } from '@/lib/agent/interactions';
 import type { SessionSummary, SessionTitle } from '@/lib/sessions/record';
 
 export interface ProviderConfig {
@@ -27,7 +28,23 @@ export type ChatItem =
       details?: unknown;
       startedAt: number;
       durationMs?: number;
+    }
+  | {
+      kind: 'interaction';
+      id: string;
+      toolCallId: string;
+      mode: 'ask' | 'permission';
+      title: string;
+      questions?: AskQuestion[];
+      reason?: string;
+      /** 有值才允许「始终允许」这个站点。 */
+      grantOrigin?: string | null;
+      status: 'pending' | InteractionStatus;
+      answers?: Record<string, string>;
+      startedAt: number;
     };
+
+export type InteractionItem = Extract<ChatItem, { kind: 'interaction' }>;
 
 export type TraceKind = 'run' | 'tool' | 'error';
 
@@ -59,7 +76,14 @@ export type UiToBg =
   | { type: 'list_sessions' }
   | { type: 'open_session'; id: string }
   | { type: 'rename_session'; id: string; title: string }
-  | { type: 'delete_session'; id: string };
+  | { type: 'delete_session'; id: string }
+  | {
+      type: 'respond_interaction';
+      toolCallId: string;
+      status: 'answered' | 'denied';
+      always?: boolean;
+      values?: Record<string, string>;
+    };
 
 export type BgToUi =
   | ({ type: 'ready' } & SessionSnapshot)
@@ -87,6 +111,13 @@ export type BgToUi =
     }
   | { type: 'trace'; entry: TraceEntry }
   | { type: 'busy'; value: boolean }
+  | { type: 'interaction_open'; item: InteractionItem }
+  | {
+      type: 'interaction_settle';
+      id: string;
+      status: InteractionStatus;
+      answers?: Record<string, string>;
+    }
   | { type: 'session_switched'; sessionId: string | null; title: SessionTitle; items: ChatItem[] }
   | { type: 'sessions'; sessions: SessionSummary[] }
   | { type: 'models'; requestId: string; models: string[] }

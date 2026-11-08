@@ -3,6 +3,7 @@ import { type Browser, browser } from 'wxt/browser';
 import {
   type BgToUi,
   type ChatItem,
+  type InteractionItem,
   PORT_NAME,
   type ProviderConfig,
   type TraceEntry,
@@ -12,13 +13,17 @@ import type { SessionSummary } from '@/lib/sessions/record';
 import { Composer } from './components/Composer';
 import { Header } from './components/Header';
 import { Home } from './components/Home';
+import type { InteractionCardProps } from './components/InteractionCard';
 import { MessageList } from './components/MessageList';
+import { PendingDeck } from './components/PendingDeck';
 import { SessionsSheet } from './components/SessionsSheet';
 import { SettingsSheet } from './components/SettingsSheet';
 import { Toast } from './components/Toast';
 import { TraceSheet } from './components/TraceSheet';
 
 type Connection = 'connecting' | 'ready' | 'lost';
+
+type InteractionResponsePayload = Parameters<InteractionCardProps['onRespond']>[1];
 
 interface PendingModelRequest {
   resolve: (models: string[]) => void;
@@ -190,6 +195,18 @@ export default function App() {
             ),
           );
           return;
+        case 'interaction_open':
+          setItems((previous) => [...previous, message.item]);
+          return;
+        case 'interaction_settle':
+          setItems((previous) =>
+            previous.map((item) =>
+              item.kind === 'interaction' && item.id === message.id
+                ? { ...item, status: message.status, answers: message.answers ?? item.answers }
+                : item,
+            ),
+          );
+          return;
         case 'trace':
           setTrace((previous) => [...previous, message.entry].slice(-100));
           return;
@@ -293,6 +310,14 @@ export default function App() {
     portRef.current?.postMessage({ type: 'abort' } satisfies UiToBg);
   }
 
+  function respondInteraction(toolCallId: string, payload: InteractionResponsePayload) {
+    portRef.current?.postMessage({
+      type: 'respond_interaction',
+      toolCallId,
+      ...payload,
+    } satisfies UiToBg);
+  }
+
   function newThread() {
     portRef.current?.postMessage({ type: 'new_thread' } satisfies UiToBg);
   }
@@ -334,6 +359,11 @@ export default function App() {
     setConnectAttempt((attempt) => attempt + 1);
   }
 
+  // 卡片展开时整块盖住输入框；要先回答或点右上角收起，才能回到输入框发新消息（发了即按未回答处理）。
+  const pendingInteractions = items.filter(
+    (item): item is InteractionItem => item.kind === 'interaction' && item.status === 'pending',
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-app text-ink">
       <Header
@@ -370,13 +400,16 @@ export default function App() {
         )}
       </main>
 
-      <Composer
-        busy={busy}
-        configured={Boolean(config)}
-        onSend={send}
-        onStop={stop}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
+      <div className="relative flex-shrink-0">
+        <PendingDeck items={pendingInteractions} onRespond={respondInteraction} />
+        <Composer
+          busy={busy && pendingInteractions.length === 0}
+          configured={Boolean(config)}
+          onSend={send}
+          onStop={stop}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+      </div>
 
       <SettingsSheet
         open={settingsOpen}

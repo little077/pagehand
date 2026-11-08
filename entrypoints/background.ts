@@ -84,6 +84,10 @@ export default defineBackground(() => {
         await session.deleteSession(message.id);
         return;
       }
+      case 'respond_interaction': {
+        session.respondInteraction(message);
+        return;
+      }
       case 'list_models': {
         try {
           const models = await fetchOpenAIModels(message.baseUrl, message.apiKey);

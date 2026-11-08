@@ -1,8 +1,14 @@
 import { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ChatItem } from '@/lib/ipc/protocol';
+import type { ChatItem, InteractionItem } from '@/lib/ipc/protocol';
 import { ToolCard } from './ToolCard';
+
+interface MessageListProps {
+  items: ChatItem[];
+}
+
+type FlowItem = Exclude<ChatItem, InteractionItem>;
 
 function TypingDots() {
   return (
@@ -45,10 +51,13 @@ function AssistantBubble({ item }: { item: Extract<ChatItem, { kind: 'assistant'
   );
 }
 
-export function MessageList({ items }: { items: ChatItem[] }) {
+export function MessageList({ items }: MessageListProps) {
   const endRef = useRef<HTMLDivElement>(null);
+  // 交互卡片挂在输入框上方，不占对话流；对话流里只留它对应的那条步骤记录。
   const visible = items.filter(
-    (item) => item.kind !== 'assistant' || item.status !== 'done' || item.text.trim().length > 0,
+    (item): item is FlowItem =>
+      item.kind !== 'interaction' &&
+      (item.kind !== 'assistant' || item.status !== 'done' || item.text.trim().length > 0),
   );
   let step = 0;
 
