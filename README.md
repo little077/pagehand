@@ -1,0 +1,87 @@
+# Pagehand（页工）
+
+把浏览器里重复、规则清楚的体力活交给 Agent。
+
+Pagehand 是一个 Chrome MV3 侧边栏扩展：用户自带模型密钥（BYOK），Agent 在用户已经登录的浏览器里读取页面、理解内容，并把结果整理成可用的文字。
+
+> 当前版本是 **v0.1 骨架**：只有读取能力，不会点击、填写或提交。所有有副作用的操作都由用户亲手完成。
+
+## 现在能做什么
+
+- 侧边栏对话，流式输出，可随时停止
+- 一个只读工具 `read_page`：读取当前标签页的标题、正文、标题结构与链接
+- 「运行记录」：查看每轮收到的任务、工具调用与错误
+- BYOK：DeepSeek / Kimi / 智谱 / 通义 / OpenAI / 任意 OpenAI 兼容端点
+- 密钥只保存在本机 `chrome.storage.local`，没有服务器、没有遥测
+
+## 快速开始
+
+```bash
+pnpm install
+pnpm dev
+```
+
+然后：
+
+1. 打开 `chrome://extensions`，开启「开发者模式」
+2. 点「加载已解压的扩展程序」，选择 `.output/chrome-mv3-dev`
+3. 打开任意网页，点击工具栏里的 Pagehand 图标，侧边栏会打开
+4. 点右上角设置，填入 Base URL、模型 ID 和 API Key
+5. 在首页点「总结这个页面」，或直接输入问题
+
+## 开发命令
+
+| 命令 | 作用 |
+| --- | --- |
+| `pnpm dev` | 开发模式（HMR） |
+| `pnpm compile` | TypeScript 类型检查 |
+| `pnpm lint` | Biome 静态检查 |
+| `pnpm format` | Biome 自动格式化 |
+| `pnpm test` | Vitest 单元测试 |
+| `pnpm build` | 生产构建到 `.output/chrome-mv3` |
+| `pnpm check` | Biome + 类型检查 + 测试 + 构建（CI 同款） |
+
+提交时 husky 会通过 lint-staged 自动对暂存文件跑 Biome；规则配置在 `biome.json`。
+
+## 目录结构
+
+```
+entrypoints/
+  background.ts          后台 Service Worker：唯一 Agent 运行时
+  sidepanel/             侧边栏 UI（React）
+lib/
+  agent/                 Agent 构造、系统提示词、模型适配
+  config/                服务商预设与本地密钥存储
+  ipc/                   侧边栏 ↔ 后台的 Port 消息协议
+  page/                  页面快照提取（注入到目标页执行）
+  tools/                 工具注册
+tests/                   单元测试
+```
+
+原则：**Agent 只跑在后台**，UI 只收发消息，不直接请求模型；工具的能力边界写在后台的权限门禁里。
+
+## 路线图
+
+| 阶段 | 内容 | 状态 |
+| --- | --- | --- |
+| 0 | 骨架、BYOK、流式对话 | ✅ |
+| 1 | 单工具闭环 `read_page` + 运行记录 | ✅ |
+| 2 | 有界循环（单轮最多 4 回合）与上下文裁剪 | 进行中 |
+| 3 | 交互工具（点击、填写、滚动）+ 权限门禁 | 未开始 |
+| 4 | 表格 / CSV 产出与会话历史 | 未开始 |
+| 5 | 操作录制回放、定时任务与增量对比 | 未开始 |
+
+## 安全与隐私
+
+- 最小权限：`sidePanel`、`storage`、`activeTab`、`scripting`。只在用户调用扩展后读取当前标签页。
+- 不上传页面内容到 Pagehand 服务器；页面文本只发给用户自己配置的模型端点。
+- 不记录 API Key 到日志；密钥仅存在本机浏览器存储中。
+- 当前没有写操作工具。任何新增写操作必须先经过权限门禁与用户确认。
+
+## 与 Cebian 的关系
+
+Pagehand 的设计参考了 [Cebian](https://github.com/maotoumao/Cebian) 的产品思路，但**不包含其代码**。Cebian 使用 AGPL-3.0，Pagehand 使用 MIT，两者独立维护。
+
+## License
+
+[MIT](./LICENSE)

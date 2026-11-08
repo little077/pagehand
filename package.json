@@ -1,0 +1,54 @@
+{
+  "name": "pagehand",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@12.10.1",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "compile": "tsc --noEmit",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "test": "vitest run",
+    "check": "biome ci . && pnpm compile && pnpm test && pnpm build",
+    "postinstall": "wxt prepare",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "clsx": "2.1.1",
+    "lucide-react": "1.70.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "tailwind-merge": "3.7.0",
+    "typebox": "1.3.27"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.6",
+    "@tailwindcss/vite": "4.3.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "@wxt-dev/module-react": "1.2.2",
+    "happy-dom": "21.0.4",
+    "husky": "9.1.7",
+    "lint-staged": "17.6.0",
+    "tailwindcss": "4.3.5",
+    "typescript": "5.9.3",
+    "vite": "8.3.6",
+    "vitest": "5.1.0",
+    "wxt": "0.21.5"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,jsonc,css}": "biome check --write --no-errors-on-unmatched"
+  }
+}
