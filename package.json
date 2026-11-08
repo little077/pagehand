@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
+  "description": "把浏览器里重复、规则清楚的体力活交给 Agent。",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/little077/pagehand.git"
+  },
+  "homepage": "https://github.com/little077/pagehand#readme",
+  "bugs": {
+    "url": "https://github.com/little077/pagehand/issues"
+  },
   "type": "module",
   "packageManager": "pnpm@12.10.1",
   "engines": {

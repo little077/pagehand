@@ -17,6 +17,8 @@ Pagehand 是一个 Chrome MV3 侧边栏扩展：用户自带模型密钥（BYOK�
 ## 快速开始
 
 ```bash
+git clone https://github.com/little077/pagehand.git
+cd pagehand
 pnpm install
 pnpm dev
 ```
