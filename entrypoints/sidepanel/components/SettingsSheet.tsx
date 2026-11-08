@@ -1,5 +1,21 @@
-import { Eye, EyeOff, KeyRound, ShieldCheck, X } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from '@/components/ui/input-group';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   DEFAULT_PROVIDER_PRESET,
   findPreset,
@@ -9,16 +25,15 @@ import {
   type ProviderPreset,
 } from '@/lib/config/presets';
 import type { ProviderConfig } from '@/lib/ipc/protocol';
+import { cn } from '@/lib/utils';
 
 interface SettingsSheetProps {
   open: boolean;
   config: ProviderConfig | null;
   onClose: () => void;
   onSave: (config: ProviderConfig) => void;
+  onListModels: (baseUrl: string, apiKey: string) => Promise<string[]>;
 }
-
-const inputClass =
-  'w-full rounded-xl border border-line-strong bg-app px-3 py-2.5 text-[12px] text-ink outline-none transition placeholder:text-ink-faint focus:border-brand/50 focus:ring-2 focus:ring-brand/10';
 
 function Field({
   label,
@@ -32,26 +47,26 @@ function Field({
   children: ReactNode;
 }) {
   return (
-    <div className="block">
-      <label
-        htmlFor={htmlFor}
-        className="mb-1 flex items-baseline justify-between gap-2 text-[11px] font-semibold text-ink"
-      >
-        {label}
-        {hint && <span className="font-normal text-[9.5px] text-ink-faint">{hint}</span>}
-      </label>
+    <div>
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <Label htmlFor={htmlFor}>{label}</Label>
+        {hint && <span className="text-[9.5px] font-normal text-ink-faint">{hint}</span>}
+      </div>
       {children}
     </div>
   );
 }
 
-export function SettingsSheet({ open, config, onClose, onSave }: SettingsSheetProps) {
+export function SettingsSheet({ open, config, onClose, onSave, onListModels }: SettingsSheetProps) {
   const [presetId, setPresetId] = useState('deepseek');
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [models, setModels] = useState<string[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -62,6 +77,9 @@ export function SettingsSheet({ open, config, onClose, onSave }: SettingsSheetPr
     setApiKey(config?.apiKey ?? '');
     setShowKey(false);
     setError(null);
+    setModels([]);
+    setFetchingModels(false);
+    setModelsError(null);
   }, [open, config]);
 
   useEffect(() => {
@@ -75,13 +93,41 @@ export function SettingsSheet({ open, config, onClose, onSave }: SettingsSheetPr
 
   if (!open) return null;
 
+  const modelOptions = modelId && !models.includes(modelId) ? [modelId, ...models] : models;
+
   function selectPreset(preset: ProviderPreset) {
     setPresetId(preset.id);
     if (preset.id !== 'custom') {
       setBaseUrl(preset.baseUrl);
       setModelId(preset.modelId);
     }
+    setModels([]);
+    setModelsError(null);
     setError(null);
+  }
+
+  async function handleFetchModels() {
+    if (!/^https?:\/\//i.test(baseUrl.trim())) {
+      setError('Base URL 需要以 http:// 或 https:// 开头。');
+      return;
+    }
+    if (!isLikelyApiKey(apiKey)) {
+      setError('API Key 看起来太短，请检查是否粘贴完整。');
+      return;
+    }
+
+    setError(null);
+    setModelsError(null);
+    setFetchingModels(true);
+    try {
+      const list = await onListModels(normalizeBaseUrl(baseUrl), apiKey.trim());
+      setModels(list);
+      setModelId((current) => (list.includes(current) ? current : (list[0] ?? '')));
+    } catch (err) {
+      setModelsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFetchingModels(false);
+    }
   }
 
   function handleSubmit(event: FormEvent) {
@@ -91,7 +137,7 @@ export function SettingsSheet({ open, config, onClose, onSave }: SettingsSheetPr
       return;
     }
     if (!modelId.trim()) {
-      setError('请填写模型 ID，例如 deepseek-v4-flash。');
+      setError('请选择模型，没有可选项时先获取模型列表。');
       return;
     }
     if (!isLikelyApiKey(apiKey)) {
@@ -133,14 +179,16 @@ export function SettingsSheet({ open, config, onClose, onSave }: SettingsSheetPr
               Bring your own key。密钥只保存在这台电脑的浏览器里。
             </p>
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-ink-soft transition hover:bg-surface-soft hover:text-ink"
+            className="size-7 rounded-lg"
             aria-label="关闭设置"
           >
             <X size={16} />
-          </button>
+          </Button>
         </div>
 
         <div className="space-y-3.5">
@@ -150,71 +198,100 @@ export function SettingsSheet({ open, config, onClose, onSave }: SettingsSheetPr
               {PROVIDER_PRESETS.map((preset) => {
                 const active = preset.id === presetId;
                 return (
-                  <button
+                  <Button
                     key={preset.id}
                     type="button"
+                    variant={active ? 'secondary' : 'outline'}
                     onClick={() => selectPreset(preset)}
-                    className={`rounded-xl border px-2.5 py-2 text-left transition ${
-                      active
-                        ? 'border-brand/45 bg-brand/[0.07] text-ink'
-                        : 'border-line bg-app text-ink-soft hover:border-line-strong hover:text-ink'
-                    }`}
+                    className={cn(
+                      'h-auto min-w-0 flex-col items-start gap-0 whitespace-normal px-2.5 py-2 text-left',
+                      active && 'border-brand/45 bg-brand/[0.07] text-ink',
+                    )}
                   >
-                    <span className="block text-[11px] font-semibold">{preset.label}</span>
-                    <span className="mt-0.5 block truncate text-[9px] text-ink-faint">
+                    <span className="block w-full text-[11px] font-semibold">{preset.label}</span>
+                    <span className="mt-0.5 block w-full truncate text-[9px] font-normal text-ink-faint">
                       {preset.id === 'custom' ? '任意兼容端点' : preset.modelId}
                     </span>
-                  </button>
+                  </Button>
                 );
               })}
             </div>
           </div>
 
           <Field label="Base URL" hint="OpenAI 兼容端点" htmlFor="ph-base-url">
-            <input
+            <Input
               id="ph-base-url"
               value={baseUrl}
-              onChange={(event) => setBaseUrl(event.target.value)}
+              onChange={(event) => {
+                setBaseUrl(event.target.value);
+                setModels([]);
+                setModelsError(null);
+              }}
               placeholder="https://api.deepseek.com/v1"
               spellCheck={false}
               autoComplete="off"
-              className={inputClass}
-            />
-          </Field>
-
-          <Field label="模型 ID" hint="以服务商文档为准" htmlFor="ph-model-id">
-            <input
-              id="ph-model-id"
-              value={modelId}
-              onChange={(event) => setModelId(event.target.value)}
-              placeholder="deepseek-v4-flash"
-              spellCheck={false}
-              autoComplete="off"
-              className={inputClass}
             />
           </Field>
 
           <Field label="API Key" hint="只写本机" htmlFor="ph-api-key">
-            <div className="relative">
-              <input
+            <InputGroup>
+              <InputGroupInput
                 id="ph-api-key"
                 value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
+                onChange={(event) => {
+                  setApiKey(event.target.value);
+                  setModels([]);
+                  setModelsError(null);
+                }}
                 type={showKey ? 'text' : 'password'}
                 placeholder={findPreset(presetId)?.keyHint ?? 'sk-...'}
                 spellCheck={false}
                 autoComplete="off"
-                className={`${inputClass} pr-10`}
               />
-              <button
-                type="button"
-                onClick={() => setShowKey((value) => !value)}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-ink-faint transition hover:bg-surface-soft hover:text-ink"
-                aria-label={showKey ? '隐藏密钥' : '显示密钥'}
-              >
-                {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
+              <InputGroupAddon className="pl-0 pr-1.5">
+                <InputGroupButton
+                  size="icon-sm"
+                  className="px-0"
+                  onClick={() => setShowKey((value) => !value)}
+                  aria-label={showKey ? '隐藏密钥' : '显示密钥'}
+                >
+                  {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                </InputGroupButton>
+                <span className="h-4 w-px bg-line" />
+                <InputGroupButton
+                  onClick={handleFetchModels}
+                  disabled={fetchingModels}
+                  aria-label="获取模型列表"
+                >
+                  <RefreshCw size={12} className={fetchingModels ? 'animate-spin' : undefined} />
+                  {fetchingModels ? '获取中' : '获取模型'}
+                </InputGroupButton>
+              </InputGroupAddon>
+            </InputGroup>
+            {modelsError && (
+              <p className="mt-1.5 rounded-xl border border-danger/25 bg-danger/[0.05] px-3 py-2 text-[10.5px] text-danger">
+                {modelsError}
+              </p>
+            )}
+          </Field>
+
+          <Field
+            label="模型"
+            hint={models.length > 0 ? `已获取 ${models.length} 个` : '先获取模型列表'}
+            htmlFor="ph-model-id"
+          >
+            <Select value={modelId} onValueChange={setModelId} disabled={modelOptions.length === 0}>
+              <SelectTrigger id="ph-model-id" aria-label="选择模型">
+                <SelectValue placeholder="暂无模型可选" />
+              </SelectTrigger>
+              <SelectContent>
+                {modelOptions.map((id) => (
+                  <SelectItem key={id} value={id}>
+                    {id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
 
           <div className="flex items-start gap-2 rounded-xl bg-app px-3 py-2.5 text-[10px] leading-relaxed text-ink-soft">
@@ -228,13 +305,10 @@ export function SettingsSheet({ open, config, onClose, onSave }: SettingsSheetPr
             </p>
           )}
 
-          <button
-            type="submit"
-            className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 text-[12px] font-semibold text-white transition hover:bg-brand-strong"
-          >
+          <Button type="submit" className="w-full">
             <KeyRound size={14} />
             {config ? '保存并开始新会话' : '保存配置'}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

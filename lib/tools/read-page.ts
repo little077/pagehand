@@ -6,11 +6,7 @@ import {
   formatSnapshotForModel,
   type PageSnapshot,
 } from '@/lib/page/snapshot';
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
-}
+import { errorMessage } from './errors';
 
 type ReadPageDetails =
   | {

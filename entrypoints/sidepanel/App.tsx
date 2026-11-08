@@ -8,19 +8,28 @@ import {
   type TraceEntry,
   type UiToBg,
 } from '@/lib/ipc/protocol';
+import type { SessionSummary } from '@/lib/sessions/record';
 import { Composer } from './components/Composer';
 import { Header } from './components/Header';
 import { Home } from './components/Home';
 import { MessageList } from './components/MessageList';
+import { SessionsSheet } from './components/SessionsSheet';
 import { SettingsSheet } from './components/SettingsSheet';
 import { Toast } from './components/Toast';
 import { TraceSheet } from './components/TraceSheet';
 
 type Connection = 'connecting' | 'ready' | 'lost';
 
+interface PendingModelRequest {
+  resolve: (models: string[]) => void;
+  reject: (error: Error) => void;
+  timer: number;
+}
+
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const RECONNECT_BASE_DELAY_MS = 1_000;
 const RECONNECT_MAX_DELAY_MS = 15_000;
+const MODEL_LIST_TIMEOUT_MS = 20_000;
 
 export default function App() {
   const [connection, setConnection] = useState<Connection>('connecting');
@@ -30,12 +39,17 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [traceOpen, setTraceOpen] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [connectAttempt, setConnectAttempt] = useState(0);
 
   const portRef = useRef<Browser.runtime.Port | null>(null);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<number | null>(null);
+  const modelRequestsRef = useRef(new Map<string, PendingModelRequest>());
 
   const cancelReconnect = useCallback(() => {
     if (reconnectTimerRef.current !== null) {
@@ -57,6 +71,44 @@ export default function App() {
     }, delay);
   }, []);
 
+  const failModelRequests = useCallback((reason: string) => {
+    for (const [requestId, pending] of modelRequestsRef.current) {
+      window.clearTimeout(pending.timer);
+      pending.reject(new Error(reason));
+      modelRequestsRef.current.delete(requestId);
+    }
+  }, []);
+
+  const requestModels = useCallback((baseUrl: string, apiKey: string) => {
+    return new Promise<string[]>((resolve, reject) => {
+      const port = portRef.current;
+      if (!port) {
+        reject(new Error('与后台的连接已断开，请稍后重试。'));
+        return;
+      }
+
+      const requestId = crypto.randomUUID();
+      const timer = window.setTimeout(() => {
+        modelRequestsRef.current.delete(requestId);
+        reject(new Error('获取模型超时，请检查 Base URL 和网络。'));
+      }, MODEL_LIST_TIMEOUT_MS);
+      modelRequestsRef.current.set(requestId, { resolve, reject, timer });
+
+      try {
+        port.postMessage({
+          type: 'list_models',
+          requestId,
+          baseUrl,
+          apiKey,
+        } satisfies UiToBg);
+      } catch {
+        window.clearTimeout(timer);
+        modelRequestsRef.current.delete(requestId);
+        reject(new Error('与后台的连接已断开，请稍后重试。'));
+      }
+    });
+  }, []);
+
   const applyMessage = useCallback(
     (message: BgToUi) => {
       switch (message.type) {
@@ -65,6 +117,7 @@ export default function App() {
           setItems(message.items);
           setTrace(message.trace);
           setBusy(message.busy);
+          setSessionId(message.sessionId);
           setConnection('ready');
           reconnectAttemptRef.current = 0;
           cancelReconnect();
@@ -113,10 +166,12 @@ export default function App() {
             {
               kind: 'tool',
               id: message.id,
+              toolCallId: message.toolCallId,
               name: message.name,
               args: message.args,
               status: 'running',
               summary: '正在执行…',
+              startedAt: message.startedAt,
             },
           ]);
           return;
@@ -129,6 +184,7 @@ export default function App() {
                     status: message.ok ? 'ok' : 'error',
                     summary: message.summary,
                     details: message.details,
+                    durationMs: message.durationMs ?? Date.now() - item.startedAt,
                   }
                 : item,
             ),
@@ -140,11 +196,32 @@ export default function App() {
         case 'busy':
           setBusy(message.value);
           return;
-        case 'cleared':
-          setItems([]);
+        case 'session_switched':
+          setItems(message.items);
           setTrace([]);
           setBusy(false);
+          setSessionId(message.sessionId);
           return;
+        case 'sessions':
+          setSessions(message.sessions);
+          setSessionsLoading(false);
+          return;
+        case 'models': {
+          const pending = modelRequestsRef.current.get(message.requestId);
+          if (!pending) return;
+          window.clearTimeout(pending.timer);
+          modelRequestsRef.current.delete(message.requestId);
+          pending.resolve(message.models);
+          return;
+        }
+        case 'models_error': {
+          const pending = modelRequestsRef.current.get(message.requestId);
+          if (!pending) return;
+          window.clearTimeout(pending.timer);
+          modelRequestsRef.current.delete(message.requestId);
+          pending.reject(new Error(message.message));
+          return;
+        }
         case 'error':
           setToast(message.message);
           return;
@@ -164,6 +241,7 @@ export default function App() {
       if (portRef.current === port) portRef.current = null;
       setConnection('lost');
       setBusy(false);
+      failModelRequests('与后台的连接已断开，请重试。');
       scheduleReconnect();
     };
 
@@ -175,9 +253,10 @@ export default function App() {
       port.onMessage.removeListener(onMessage);
       port.onDisconnect.removeListener(onDisconnect);
       cancelReconnect();
+      failModelRequests('与后台的连接已断开，请重试。');
       port.disconnect();
     };
-  }, [applyMessage, cancelReconnect, connectAttempt, scheduleReconnect]);
+  }, [applyMessage, cancelReconnect, connectAttempt, failModelRequests, scheduleReconnect]);
 
   useEffect(() => {
     if (!busy || connection !== 'ready') return;
@@ -218,6 +297,32 @@ export default function App() {
     portRef.current?.postMessage({ type: 'new_thread' } satisfies UiToBg);
   }
 
+  function openSessions() {
+    setSessionsOpen(true);
+    const port = portRef.current;
+    if (!port) {
+      setSessionsLoading(false);
+      setToast('后台连接已断开，正在自动重连。');
+      return;
+    }
+    setSessionsLoading(true);
+    port.postMessage({ type: 'list_sessions' } satisfies UiToBg);
+  }
+
+  function openSession(id: string) {
+    portRef.current?.postMessage({ type: 'open_session', id } satisfies UiToBg);
+    setSessionsOpen(false);
+  }
+
+  function renameSession(id: string, title: string) {
+    portRef.current?.postMessage({ type: 'rename_session', id, title } satisfies UiToBg);
+  }
+
+  function deleteSession(id: string) {
+    setSessionsLoading(true);
+    portRef.current?.postMessage({ type: 'delete_session', id } satisfies UiToBg);
+  }
+
   function saveConfig(next: ProviderConfig) {
     portRef.current?.postMessage({ type: 'save_config', config: next } satisfies UiToBg);
     setSettingsOpen(false);
@@ -236,6 +341,7 @@ export default function App() {
         hasThread={items.length > 0}
         onNewThread={newThread}
         onOpenTrace={() => setTraceOpen(true)}
+        onOpenSessions={openSessions}
         onOpenSettings={() => setSettingsOpen(true)}
       />
 
@@ -277,8 +383,19 @@ export default function App() {
         config={config}
         onClose={() => setSettingsOpen(false)}
         onSave={saveConfig}
+        onListModels={requestModels}
       />
       <TraceSheet open={traceOpen} entries={trace} onClose={() => setTraceOpen(false)} />
+      <SessionsSheet
+        open={sessionsOpen}
+        sessions={sessions}
+        currentId={sessionId}
+        loading={sessionsLoading}
+        onClose={() => setSessionsOpen(false)}
+        onOpen={openSession}
+        onRename={renameSession}
+        onDelete={deleteSession}
+      />
       <Toast message={toast} onDismiss={() => setToast(null)} />
     </div>
   );

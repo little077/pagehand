@@ -9,10 +9,14 @@ Pagehand 是一个 Chrome MV3 侧边栏扩展：用户自带模型密钥（BYOK�
 ## 现在能做什么
 
 - 侧边栏对话，流式输出，可随时停止
-- 一个只读工具 `read_page`：读取当前标签页的标题、正文、标题结构与链接
+- 四个只读工具：`read_page` 读当前页、`list_tabs` 列标签页、`read_tab` 读指定标签页、`read_selection` 读选中文本
+- 步骤时间线：每次工具调用有序号、状态、耗时和结果摘要，详情可展开
+- 历史会话与多会话列表：本机 IndexedDB 存储，可打开、改名、删除
 - 「运行记录」：查看每轮收到的任务、工具调用与错误
 - BYOK：DeepSeek / Kimi / 智谱 / 通义 / OpenAI / 任意 OpenAI 兼容端点
 - 密钥只保存在本机 `chrome.storage.local`，没有服务器、没有遥测
+
+会话标题按优先级取：用户改过的名字 > 模型总结的标题 > 首条任务的前 20 个字。
 
 ## 快速开始
 
@@ -56,6 +60,7 @@ lib/
   config/                服务商预设与本地密钥存储
   ipc/                   侧边栏 ↔ 后台的 Port 消息协议
   page/                  页面快照提取（注入到目标页执行）
+  sessions/              会话记录、标题规则与 IndexedDB 存储
   tools/                 工具注册
 tests/                   单元测试
 ```
@@ -64,25 +69,28 @@ tests/                   单元测试
 
 ## 路线图
 
+详细拆解（工具、场景、权限、验收）见 [docs/agent-roadmap.md](./docs/agent-roadmap.md)。
+
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
-| 0 | 骨架、BYOK、流式对话 | ✅ |
-| 1 | 单工具闭环 `read_page` + 运行记录 | ✅ |
-| 2 | 有界循环（单轮最多 4 回合）与上下文裁剪 | 进行中 |
-| 3 | 交互工具（点击、填写、滚动）+ 权限门禁 | 未开始 |
-| 4 | 表格 / CSV 产出与会话历史 | 未开始 |
-| 5 | 操作录制回放、定时任务与增量对比 | 未开始 |
+| 0 | 骨架、BYOK、流式对话、单工具闭环 | ✅ |
+| 1 | 三个只读工具（`list_tabs` / `read_tab` / `read_selection`）+ 步骤时间线 | ✅ |
+| 2 | 会话持久化 + 多会话 | ✅ |
+| 3 | 权限门禁 + `ask_user` | 未开始 |
+| 4 | 写操作 `inspect` / `click` / `fill` / `scroll` | 未开始 |
+| 5 | 上下文治理 | 未开始 |
+| 6 | Skill / 模板 / 导出 | 未开始 |
+
+单轮工具循环上限已从 4 个回合提到 8 个，用来容纳「列标签 → 读多页 → 回答」这类任务。
 
 ## 安全与隐私
 
-- 最小权限：`sidePanel`、`storage`、`activeTab`、`scripting`。只在用户调用扩展后读取当前标签页。
+- 权限：`sidePanel`、`storage`、`activeTab`、`scripting`；读取网页正文还需要 `host_permissions`，当前基线是 `<all_urls>`。
+- 扩展只在你发起任务时读取你点名的页面，不在后台扫描、遍历或定时抓取网页；不读取密码框。
+- 历史会话存在本机浏览器 IndexedDB 里，只记模型标识（服务商 / Base URL / 模型 ID），**不记 API Key**。清除浏览器数据即清除历史。
 - 不上传页面内容到 Pagehand 服务器；页面文本只发给用户自己配置的模型端点。
 - 不记录 API Key 到日志；密钥仅存在本机浏览器存储中。
 - 当前没有写操作工具。任何新增写操作必须先经过权限门禁与用户确认。
-
-## 与 Cebian 的关系
-
-Pagehand 的设计参考了 [Cebian](https://github.com/maotoumao/Cebian) 的产品思路，但**不包含其代码**。Cebian 使用 AGPL-3.0，Pagehand 使用 MIT，两者独立维护。
 
 ## License
 

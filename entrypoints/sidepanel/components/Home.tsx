@@ -1,4 +1,12 @@
-import { ArrowUpRight, FileText, KeyRound, Link2, ListTree, ShieldCheck } from 'lucide-react';
+import {
+  ArrowUpRight,
+  Files,
+  FileText,
+  KeyRound,
+  Link2,
+  ListTree,
+  ShieldCheck,
+} from 'lucide-react';
 
 interface HomeProps {
   configured: boolean;
@@ -25,6 +33,12 @@ const SUGGESTIONS = [
     hint: '按用途分组列出',
     prompt: '读取当前页面，把页面上的链接按用途分组列出，并标出哪些看起来是外部站点。',
   },
+  {
+    icon: Files,
+    title: '对比打开的页面',
+    hint: '先列标签，再挑两页读',
+    prompt: '列出我当前窗口打开的网页标签页，挑两个主题相近的页面读取正文，对比它们的核心结论。',
+  },
 ];
 
 export function Home({ configured, onPick, onOpenSettings }: HomeProps) {
@@ -37,7 +51,8 @@ export function Home({ configured, onPick, onOpenSettings }: HomeProps) {
         把这一页的体力活交出来。
       </h2>
       <p className="mt-2.5 max-w-[320px] text-[12px] leading-relaxed text-ink-soft">
-        Pagehand 会读取你当前打开的页面，帮你总结、列大纲、找链接。它不会点击、填写或提交。
+        Pagehand
+        会读取你点名的页面，帮你总结、列大纲、找链接，也能跨标签页对比内容。它不会点击、填写或提交。
       </p>
 
       {!configured && (

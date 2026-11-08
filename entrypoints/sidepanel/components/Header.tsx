@@ -1,10 +1,11 @@
-import { Activity, Hand, RotateCcw, Settings2 } from 'lucide-react';
+import { Activity, Hand, History, RotateCcw, Settings2 } from 'lucide-react';
 
 interface HeaderProps {
   connection: 'connecting' | 'ready' | 'lost';
   hasThread: boolean;
   onNewThread: () => void;
   onOpenTrace: () => void;
+  onOpenSessions: () => void;
   onOpenSettings: () => void;
 }
 
@@ -25,6 +26,7 @@ export function Header({
   hasThread,
   onNewThread,
   onOpenTrace,
+  onOpenSessions,
   onOpenSettings,
 }: HeaderProps) {
   return (
@@ -61,6 +63,15 @@ export function Header({
             <RotateCcw size={15} />
           </button>
         )}
+        <button
+          type="button"
+          onClick={onOpenSessions}
+          className="rounded-lg p-1.5 text-ink-soft transition hover:bg-surface-soft hover:text-ink"
+          title="历史会话"
+          aria-label="历史会话"
+        >
+          <History size={15} />
+        </button>
         <button
           type="button"
           onClick={onOpenTrace}

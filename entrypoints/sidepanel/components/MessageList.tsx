@@ -50,6 +50,7 @@ export function MessageList({ items }: { items: ChatItem[] }) {
   const visible = items.filter(
     (item) => item.kind !== 'assistant' || item.status !== 'done' || item.text.trim().length > 0,
   );
+  let step = 0;
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -58,8 +59,9 @@ export function MessageList({ items }: { items: ChatItem[] }) {
 
   return (
     <div className="space-y-3 px-3.5 py-4">
-      {visible.map((item) => {
+      {visible.map((item, index) => {
         if (item.kind === 'user') {
+          step = 0;
           return (
             <div key={item.id} className="ph-rise flex justify-end">
               <div className="max-w-[86%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-brand px-3.5 py-2.5 text-[12.5px] leading-relaxed text-white shadow-sm">
@@ -71,7 +73,15 @@ export function MessageList({ items }: { items: ChatItem[] }) {
         if (item.kind === 'assistant') {
           return <AssistantBubble key={item.id} item={item} />;
         }
-        return <ToolCard key={item.id} item={item} />;
+        step += 1;
+        return (
+          <ToolCard
+            key={item.id}
+            item={item}
+            step={step}
+            last={visible[index + 1]?.kind !== 'tool'}
+          />
+        );
       })}
       <div ref={endRef} />
     </div>
