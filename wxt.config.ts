@@ -8,6 +8,7 @@ export default defineConfig({
     description: '把浏览器里重复、规则清楚的体力活交给 Agent。',
     version: '0.1.0',
     permissions: ['sidePanel', 'storage', 'activeTab', 'scripting'],
+    host_permissions: ['<all_urls>'],
     action: {
       default_title: '打开 Pagehand',
     },
