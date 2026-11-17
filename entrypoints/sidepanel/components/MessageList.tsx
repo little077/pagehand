@@ -10,11 +10,26 @@ interface MessageListProps {
 }
 
 function UserBubble({ item }: { item: UserItem }) {
+  const images = item.attachments ?? [];
   return (
-    <div className="ph-rise flex justify-end">
-      <div className="max-w-[86%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-brand px-3.5 py-2.5 text-[12.5px] leading-relaxed text-white shadow-sm">
-        {item.text}
-      </div>
+    <div className="ph-rise flex flex-col items-end gap-2.5">
+      {images.length > 0 ? (
+        <div className="flex max-w-[86%] flex-wrap justify-end gap-1.5">
+          {images.map((image) => (
+            <img
+              key={image.id}
+              src={`data:${image.mimeType};base64,${image.data}`}
+              alt="截图附件"
+              className="max-h-44 max-w-full rounded-xl border border-line bg-surface object-contain shadow-sm"
+            />
+          ))}
+        </div>
+      ) : null}
+      {item.text ? (
+        <div className="max-w-[86%] rounded-2xl rounded-br-md bg-brand px-3.5 py-2.5 text-[12.5px] leading-relaxed text-white shadow-sm">
+          <p className="m-0 whitespace-pre-wrap">{item.text}</p>
+        </div>
+      ) : null}
     </div>
   );
 }

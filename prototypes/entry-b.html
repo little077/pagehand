@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pagehand · 截屏模式与附件</title>
+<style>
+  :root {
+    --canvas: #eef2f6;
+    --app: #f7f9fb;
+    --surface: #ffffff;
+    --surface-soft: #eef3f7;
+    --ink: #162331;
+    --ink-soft: #637383;
+    --ink-faint: #7b8794;
+    --line: rgba(29, 55, 76, 0.12);
+    --line-strong: rgba(29, 55, 76, 0.2);
+    --brand: #315f7c;
+    --brand-strong: #214b67;
+    --brand-soft: #e7eff5;
+    --success: #4a7666;
+    --success-soft: #eaf4ee;
+    --danger: #b0554e;
+    --warning: #8a6634;
+    --font: "Aptos", "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    --serif: "Iowan Old Style", "Palatino Linotype", "Noto Serif SC", "Songti SC", serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(1100px 500px at 5% -10%, rgba(196, 214, 229, 0.75), transparent 60%),
+      radial-gradient(900px 420px at 100% 0%, rgba(231, 239, 245, 0.9), transparent 55%),
+      var(--canvas);
+    color: var(--ink);
+    font-family: var(--font);
+    -webkit-font-smoothing: antialiased;
+  }
+  button, select { font: inherit; color: inherit; }
+  .page { max-width: 1120px; margin: 0 auto; padding: 40px 28px 80px; }
+  .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
+  .eyebrow { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--brand); font-weight: 700; }
+  h1 { margin: 6px 0 8px; font-family: var(--serif); font-size: 30px; letter-spacing: -0.02em; }
+  .page-head p { margin: 0; max-width: 700px; color: var(--ink-soft); font-size: 12.5px; line-height: 1.75; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; border: 1px solid rgba(49, 95, 124, 0.25); background: rgba(255, 255, 255, 0.72); color: var(--brand-strong); font-size: 10px; font-weight: 600; white-space: nowrap; }
+  .badge i { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); }
+  .layout { display: grid; grid-template-columns: 420px minmax(0, 1fr); gap: 28px; align-items: start; }
+  .sidepanel { width: 420px; max-width: 100%; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--app); padding: 12px; box-shadow: 0 16px 40px rgba(29, 55, 76, 0.08); }
+  .panel { background: rgba(255, 255, 255, 0.9); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 8px 24px rgba(29, 55, 76, 0.05); }
+  .settings { padding: 16px; margin-bottom: 12px; }
+  .panel-title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  .panel-title h2 { margin: 0; font-size: 12.5px; font-weight: 700; }
+  .panel-title span { font-size: 9.5px; color: var(--ink-faint); }
+  .field-label { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 10px; }
+  .field-label span:first-child { font-weight: 650; }
+  .field-label span:last-child { color: var(--ink-faint); }
+  select { width: 100%; height: 34px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); appearance: none; outline: none; font-size: 10.5px; }
+  .segmented { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border-radius: 10px; background: var(--surface-soft); margin-top: 10px; }
+  .segmented button { height: 30px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-soft); font-size: 10px; font-weight: 650; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+  .segmented button.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(29, 55, 76, 0.1); }
+  .summary { margin-top: 10px; padding: 7px 9px; border-radius: 8px; background: var(--app); font-size: 9.5px; color: var(--ink-soft); }
+  .summary b { color: var(--ink); }
+
+  .browser { border: 1px solid var(--line); border-radius: 13px; overflow: hidden; background: var(--surface); box-shadow: 0 4px 14px rgba(29, 55, 76, 0.06); }
+  .browser-bar { height: 26px; display: flex; align-items: center; gap: 8px; padding: 0 9px; background: #f1f5f8; border-bottom: 1px solid var(--line); }
+  .dots { display: flex; gap: 4px; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: #c8d3dc; }
+  .url { flex: 1; height: 15px; padding: 0 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); font-size: 7.5px; color: var(--ink-faint); display: flex; align-items: center; }
+  .viewport { position: relative; height: 300px; overflow: hidden; padding: 0 10px 12px; background: linear-gradient(180deg, #fbfcfd, #f6f9fb); }
+  .nav { height: 38px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--line); }
+  .logo { width: 18px; height: 18px; border-radius: 5px; background: var(--ink); color: #fff; font-size: 8px; font-weight: 700; display: grid; place-items: center; }
+  .links { font-size: 8px; color: var(--ink-soft); white-space: nowrap; }
+  .search { margin-left: auto; width: 112px; height: 20px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); font-size: 7.5px; color: var(--ink-faint); display: flex; align-items: center; overflow: hidden; white-space: nowrap; }
+  .hero { display: grid; grid-template-columns: 1fr 118px; gap: 10px; align-items: center; padding: 12px 0 10px; }
+  .kicker { font-size: 7px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--brand); font-weight: 700; }
+  .hero h3 { margin: 3px 0; font-family: var(--serif); font-size: 15px; }
+  .hero p { margin: 0 0 7px; font-size: 8px; line-height: 1.5; color: var(--ink-soft); }
+  .cta { display: inline-flex; align-items: center; height: 21px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--brand); color: #fff; font-size: 8px; font-weight: 650; }
+  .chart { height: 88px; padding: 7px; border: 1px solid var(--line); border-radius: 9px; background: linear-gradient(145deg, #eef5f0, #d8e7dc); }
+  .chart svg { width: 100%; height: 100%; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+  .card { padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  .card .thumb { height: 42px; margin-bottom: 5px; border-radius: 5px; background: linear-gradient(145deg, #edf2f6, #d7e1e9); }
+  .card b { display: block; font-size: 7.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card small { display: block; margin-top: 2px; font-size: 6.5px; color: var(--ink-faint); }
+
+  .capture-overlay { position: absolute; inset: 0; z-index: 10; display: none; cursor: crosshair; background: rgba(22, 35, 49, 0.08); }
+  .capture-overlay.active { display: block; }
+  .capture-banner {
+    position: absolute; top: 9px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 6px; max-width: calc(100% - 20px);
+    padding: 5px 8px; border-radius: 8px; background: rgba(22, 35, 49, 0.9); color: #fff;
+    font-size: 8px; white-space: nowrap; box-shadow: 0 6px 18px rgba(22, 35, 49, 0.22);
+  }
+  .capture-banner .dot { width: 5px; height: 5px; border-radius: 50%; background: #84d3a6; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  .capture-banner .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .capture-banner button { border: 0; background: transparent; color: #fff; font-size: 8px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; padding: 0; flex-shrink: 0; }
+  .capture-rect { position: absolute; display: none; border: 1.5px dashed #4a7666; background: rgba(74, 118, 102, 0.13); }
+  .capture-rect.visible { display: block; }
+  .flash { position: absolute; inset: 0; z-index: 12; background: #fff; pointer-events: none; opacity: 0; }
+  .flash.on { animation: flash 0.35s ease-out; }
+  @keyframes flash { from { opacity: 0.88; } to { opacity: 0; } }
+
+  .composer { margin-top: 10px; border: 1px solid var(--line-strong); border-radius: 13px; background: var(--surface); box-shadow: 0 2px 10px rgba(29, 55, 76, 0.05); position: relative; }
+  .composer.mode-active { border-color: rgba(74, 118, 102, 0.55); box-shadow: 0 0 0 3px rgba(74, 118, 102, 0.09); }
+  .toolbar { display: flex; align-items: center; gap: 5px; padding: 5px 7px; border-bottom: 1px solid var(--line); background: rgba(247, 249, 251, 0.7); border-radius: 13px 13px 0 0; }
+  .tool { display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 7px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--ink-soft); font-size: 8.5px; font-weight: 650; }
+  .tool:hover { background: var(--surface-soft); color: var(--ink); }
+  .tool.active { background: var(--success-soft); color: #416b5b; border-color: rgba(74, 118, 102, 0.25); }
+  .tool:disabled { opacity: 0.4; cursor: not-allowed; }
+  .cap { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; height: 19px; padding: 0 6px; border-radius: 999px; background: var(--success-soft); color: var(--success); font-size: 7.5px; font-weight: 700; }
+  .cap.off { background: #f3f0ec; color: var(--warning); }
+  .mode-hint { display: none; align-items: center; gap: 5px; padding: 5px 8px; border-bottom: 1px solid #dbe8e2; background: #f0f7f3; color: #416b5b; font-size: 8px; }
+  .mode-hint.visible { display: flex; }
+  .mode-hint .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--success); animation: pulse 1.2s infinite; }
+  .mode-hint .cancel { margin-left: auto; border: 0; background: transparent; color: #416b5b; font-size: 8px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; padding: 0; }
+  .tray { display: none; flex-wrap: wrap; gap: 6px; padding: 7px 8px 0; }
+  .tray.has-items { display: flex; }
+  .att { position: relative; width: 94px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  .att-thumb { height: 52px; background: var(--surface-soft); }
+  .att-thumb.whole { background: linear-gradient(90deg, transparent 0 8%, rgba(49,95,124,.12) 8% 92%, transparent 92%) 0 18%/100% 5px no-repeat, linear-gradient(90deg, transparent 0 8%, rgba(49,95,124,.08) 8% 68%, transparent 68%) 0 38%/100% 4px no-repeat, linear-gradient(145deg, #f3f7fa, #d9e4ec); }
+  .att-thumb.region { background: linear-gradient(145deg, #eaf4ee, #bdd6c6); }
+  .att-meta { padding: 3px 5px 4px; display: flex; flex-direction: column; gap: 1px; }
+  .att-meta b { font-size: 7.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .att-meta small { font-size: 6.5px; color: var(--ink-faint); }
+  .att-x { position: absolute; top: 3px; right: 3px; width: 14px; height: 14px; border: 0; border-radius: 50%; background: rgba(22, 35, 49, 0.62); color: #fff; display: grid; place-items: center; padding: 0; }
+  .editor { min-height: 68px; max-height: 120px; padding: 9px 10px 4px; font-size: 11.5px; line-height: 1.6; outline: none; }
+  .editor:empty::before { content: attr(data-placeholder); color: var(--ink-faint); pointer-events: none; }
+  .footer { display: flex; align-items: center; gap: 6px; padding: 3px 7px 6px; }
+  .footer .hint { font-size: 7.5px; color: var(--ink-faint); }
+  .footer .count { margin-left: auto; font-size: 7.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .send { width: 25px; height: 25px; border: 0; border-radius: 50%; background: var(--brand); color: #fff; display: grid; place-items: center; }
+  .send:disabled { background: var(--line-strong); cursor: not-allowed; }
+  .sent { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+  .sent-bubble { align-self: flex-end; max-width: 88%; padding: 6px 9px; border-radius: 10px 10px 3px 10px; background: var(--brand); color: #fff; font-size: 9px; line-height: 1.5; display: flex; flex-direction: column; gap: 2px; }
+  .sent-bubble small { font-size: 7px; opacity: 0.75; }
+
+  .side-notes { display: flex; flex-direction: column; gap: 14px; }
+  .note { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255, 255, 255, 0.82); box-shadow: 0 8px 22px rgba(29, 55, 76, 0.05); }
+  .note h3 { margin: 0 0 7px; font-size: 11px; }
+  .note p, .note li { margin: 0; color: var(--ink-soft); font-size: 9.8px; line-height: 1.7; }
+  .note ul { margin: 0; padding-left: 15px; }
+  .note li + li { margin-top: 4px; }
+  .note code { padding: 1px 4px; border-radius: 4px; background: var(--surface-soft); color: var(--brand-strong); font-family: "Cascadia Code", Consolas, monospace; font-size: 8.5px; }
+  .demo { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+  .control { height: 27px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--ink-soft); font-size: 9.5px; font-weight: 600; }
+  .control.active { border-color: rgba(49, 95, 124, 0.45); background: var(--brand-soft); color: var(--brand-strong); }
+  .toast { position: fixed; left: 50%; bottom: 24px; z-index: 100; transform: translate(-50%, 8px); padding: 8px 14px; border-radius: 999px; background: rgba(22, 35, 49, 0.92); color: #fff; font-size: 10px; opacity: 0; pointer-events: none; transition: 0.18s ease; box-shadow: 0 8px 24px rgba(22, 35, 49, 0.18); white-space: nowrap; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .i { width: 12px; height: 12px; flex-shrink: 0; display: inline-block; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .att-x svg { width: 8px; height: 8px; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .sidepanel { width: 100%; max-width: 420px; margin: 0 auto; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></symbol>
+  <symbol id="i-crop" viewBox="0 0 24 24"><path d="M6 3v15h15M3 6h15v15"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h10"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="9.5" r="1.4"/><path d="M4.5 17l4.6-4.6 3.2 3.2 2.4-2.4 4.3 4.3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+</svg>
+
+<main class="page">
+  <header class="page-head">
+    <div>
+      <span class="eyebrow">Interaction prototype</span>
+      <h1>截图模式与附件</h1>
+      <p>点「截屏」后按钮进入活跃态，页面注入提示层；用户在页面上拖动一个矩形，松开即截取该区域。这里不读取页面 DOM、不选具体元素，所以 iframe 里是什么都不影响截图。</p>
+    </div>
+    <span class="badge"><i></i> MOCK / 可点击</span>
+  </header>
+
+  <div class="layout">
+    <div class="sidepanel">
+      <section class="panel settings">
+        <div class="panel-title"><h2>模型能力</h2><span>设置页 · B 方案</span></div>
+        <div class="field-label"><span>模型</span><span>已获取 4 个</span></div>
+        <select id="model-select" aria-label="模型">
+          <option>gpt-5-mini</option>
+          <option>qwen3-max</option>
+          <option>glm-4.6</option>
+          <option>kimi-k2.5</option>
+        </select>
+        <div class="field-label" style="margin-top:10px"><span>能力</span><span>模型属性</span></div>
+        <div class="segmented" id="capability">
+          <button type="button" data-value="text"><svg class="i"><use href="#i-text"/></svg>纯文本</button>
+          <button type="button" class="active" data-value="image"><svg class="i"><use href="#i-image"/></svg>支持图片</button>
+        </div>
+        <div class="summary" id="capability-summary">当前：<b>gpt-5-mini</b> · 支持图片</div>
+      </section>
+
+      <div class="browser">
+        <div class="browser-bar">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="url">shop.example.com/explore</span>
+        </div>
+        <div class="viewport" id="viewport">
+          <div class="nav">
+            <span class="logo">M</span>
+            <span class="links">首页&nbsp;&nbsp;发现&nbsp;&nbsp;购物车</span>
+            <span class="search">杭州百丈岭</span>
+          </div>
+          <div class="hero">
+            <div>
+              <span class="kicker">本周精选</span>
+              <h3>轻量通勤背包</h3>
+              <p>防泼水面料，14 寸电脑仓，通勤和短途都够用。</p>
+              <button type="button" class="cta">加入购物车</button>
+            </div>
+            <div class="chart">
+              <svg viewBox="0 0 120 70" fill="none">
+                <path d="M4 58h112M4 44h112M4 30h112M4 16h112" stroke="rgba(49,95,124,.12)"/>
+                <path d="M6 56c12-2 16-12 26-12s13 8 23 4 14-18 25-18 14 8 24 4 10-10 10-10" stroke="#4a7666" stroke-width="2.2" stroke-linecap="round"/>
+                <circle cx="104" cy="24" r="2.6" fill="#4a7666"/>
+              </svg>
+            </div>
+          </div>
+          <div class="cards">
+            <div class="card"><div class="thumb"></div><b>折叠收纳包</b><small>¥ 129</small></div>
+            <div class="card"><div class="thumb"></div><b>通勤托特包</b><small>¥ 199</small></div>
+            <div class="card"><div class="thumb"></div><b>轻量腰包</b><small>¥ 89</small></div>
+          </div>
+
+          <div class="capture-overlay" id="overlay">
+            <div class="capture-banner">
+              <i class="dot"></i>
+              <span class="grow" id="overlay-hint">截图模式 · 点击页面任意位置完成</span>
+              <button type="button" id="overlay-cancel">取消</button>
+            </div>
+            <div class="capture-rect" id="capture-rect"></div>
+          </div>
+          <div class="flash" id="flash"></div>
+        </div>
+      </div>
+
+      <div class="composer" id="composer">
+        <div class="toolbar">
+          <button type="button" class="tool" data-tool="capture" data-requires-vision><svg class="i"><use href="#i-camera"/></svg>截屏</button>
+          <span class="cap" id="cap"><svg class="i"><use href="#i-eye"/></svg><span>视觉模型</span></span>
+        </div>
+        <div class="mode-hint" id="mode-hint">
+          <i class="dot"></i><span id="mode-hint-text"></span>
+          <button type="button" class="cancel" id="mode-cancel">取消</button>
+        </div>
+        <div class="tray" id="tray"></div>
+        <div class="editor" contenteditable="true" id="editor" data-placeholder="问问这一页，或让它整理成表…"></div>
+        <div class="footer">
+          <span class="hint">Enter 发送 · Shift + Enter 换行</span>
+          <span class="count" id="count">0/3</span>
+          <button type="button" class="send" id="send" disabled aria-label="发送"><svg class="i"><use href="#i-arrow"/></svg></button>
+        </div>
+      </div>
+      <div class="sent" id="sent"></div>
+    </div>
+
+    <aside class="side-notes">
+      <div class="note">
+        <h3>交互说明</h3>
+        <p>只有一个「截屏」按钮：点击后按钮发绿、页面出现提示；用户在页面上拖动矩形，松开即完成截图。不读取 DOM、不选输入框、不生成选择器。</p>
+      </div>
+      <div class="note">
+        <h3>iframe 为什么不再影响</h3>
+        <p>截图是像素操作：页面显示什么就截什么。提示层在顶层页面上，点击/拖拽由提示层接管；不需要访问 iframe 内部 DOM，所以 iframe 里是视频、地图还是支付页都能截到。</p>
+      </div>
+      <div class="note">
+        <h3>技术落点</h3>
+        <ul>
+          <li>覆盖层：注入自包含函数，fixed 全屏，点击/拖拽/Esc 都在这层处理。</li>
+          <li>截屏前先隐藏覆盖层，避免提示条被截进图。</li>
+          <li>截屏 = 框选矩形 + DPR 裁剪；不再有单独的整屏模式。</li>
+          <li>Tiptap 不插图片节点；工具栏和附件托盘在 <code>EditorContent</code> 外面。</li>
+        </ul>
+      </div>
+      <div class="note">
+        <h3>限制与存储</h3>
+        <ul>
+          <li>最多 3 张，单张 2MB，总 4MB；最长边缩到 1600px。</li>
+          <li>第 4 张直接拦截，不静默丢弃。</li>
+          <li>IndexedDB 升 v2：attachments + sessionMeta，图片去重、列表不读整条记录。</li>
+          <li>图片作为 <code>ImageContent</code> 发给模型；base64 只是传输编码。</li>
+        </ul>
+      </div>
+      <div class="demo">
+        <button type="button" class="control active" id="vision-on">视觉模型</button>
+        <button type="button" class="control" id="vision-off">纯文本模型</button>
+        <button type="button" class="control" id="clear">清空附件</button>
+        <button type="button" class="control" id="demo-error">模拟截图失败</button>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+  const icon = (name) => `<svg class="i"><use href="#i-${name}"/></svg>`;
+
+  let toastTimer;
+  function toast(message) {
+    const node = $('#toast');
+    node.textContent = message;
+    node.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => node.classList.remove('show'), 1900);
+  }
+
+  // 设置页 B
+  const capability = $('#capability');
+  function updateCapability() {
+    const model = $('#model-select').value;
+    const image = $('.active', capability).dataset.value === 'image';
+    $('#capability-summary').innerHTML = `当前：<b>${model}</b> · ${image ? '支持图片' : '纯文本'}`;
+    setVision(image);
+  }
+  capability.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-value]');
+    if (!button) return;
+    $$('button', capability).forEach((item) => item.classList.toggle('active', item === button));
+    updateCapability();
+  });
+  $('#model-select').addEventListener('change', updateCapability);
+
+  // 截图模式
+  const state = { capturing: false, attachments: [], supportsImages: true, drag: null };
+  const viewport = $('#viewport');
+  const overlay = $('#overlay');
+  const overlayHint = $('#overlay-hint');
+  const captureRect = $('#capture-rect');
+  const flash = $('#flash');
+  const composer = $('#composer');
+  const modeHint = $('#mode-hint');
+  const modeHintText = $('#mode-hint-text');
+  const tray = $('#tray');
+  const count = $('#count');
+  const editor = $('#editor');
+  const sendButton = $('#send');
+  const capBadge = $('#cap');
+  const sent = $('#sent');
+
+  function setVision(value) {
+    state.supportsImages = value;
+    $$('[data-requires-vision]').forEach((button) => {
+      button.disabled = !value;
+      button.title = value ? '' : '当前模型不支持图片输入';
+    });
+    $('#cap span').textContent = value ? '视觉模型' : '纯文本模型';
+    capBadge.classList.toggle('off', !value);
+    $('#vision-on').classList.toggle('active', value);
+    $('#vision-off').classList.toggle('active', !value);
+    if (!value) deactivate();
+  }
+
+  function updateTools() {
+    $$('[data-tool]').forEach((button) => {
+      button.classList.toggle('active', state.capturing);
+    });
+    composer.classList.toggle('mode-active', state.capturing);
+  }
+
+  function startCapture() {
+    if (!state.supportsImages) {
+      toast('当前模型是纯文本，先在设置里切换为支持图片');
+      return;
+    }
+    state.capturing = true;
+    state.drag = null;
+    captureRect.classList.remove('visible');
+    captureRect.style.cssText = '';
+    overlay.classList.add('active');
+    modeHint.classList.add('visible');
+    overlayHint.textContent = '截屏 · 拖动选择区域';
+    modeHintText.textContent = '截屏：在页面上拖动选择区域 · Esc 取消';
+    updateTools();
+  }
+
+  function deactivate() {
+    state.capturing = false;
+    state.drag = null;
+    overlay.classList.remove('active');
+    modeHint.classList.remove('visible');
+    captureRect.classList.remove('visible');
+    captureRect.style.cssText = '';
+    updateTools();
+  }
+
+  function addAttachment(attachment) {
+    if (state.attachments.length >= 3) {
+      toast('每条消息最多 3 个附件，先发送或删除一个');
+      return;
+    }
+    state.attachments.push({ id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, ...attachment });
+    renderAttachments();
+    toast('已附加截图');
+  }
+
+  function renderAttachments() {
+    tray.innerHTML = '';
+    count.textContent = `${state.attachments.length}/3`;
+    tray.classList.toggle('has-items', state.attachments.length > 0);
+    for (const attachment of state.attachments) {
+      const node = document.createElement('div');
+      node.className = 'att';
+      node.innerHTML = `<div class="att-thumb ${attachment.thumb}"></div><div class="att-meta"><b>${attachment.label}</b><small>${attachment.sub}</small></div><button type="button" class="att-x" aria-label="移除附件">${icon('x')}</button>`;
+      $('.att-x', node).addEventListener('click', () => {
+        state.attachments = state.attachments.filter((item) => item.id !== attachment.id);
+        renderAttachments();
+      });
+      tray.append(node);
+    }
+  }
+
+  function takeRegion(rect) {
+    overlay.classList.remove('active');
+    flash.classList.remove('on');
+    void flash.offsetWidth;
+    flash.classList.add('on');
+    addAttachment({
+      label: '截屏区域',
+      sub: `${Math.round(rect.width)} × ${Math.round(rect.height)} CSS px`,
+      thumb: 'region',
+    });
+    deactivate();
+  }
+
+  overlay.addEventListener('mousedown', (event) => {
+    if (!state.capturing) return;
+    if (event.target.closest('.capture-banner')) return;
+    const bounds = viewport.getBoundingClientRect();
+    state.drag = {
+      startX: event.clientX - bounds.left,
+      startY: event.clientY - bounds.top,
+      bounds,
+    };
+    captureRect.style.left = `${state.drag.startX}px`;
+    captureRect.style.top = `${state.drag.startY}px`;
+    captureRect.style.width = '0px';
+    captureRect.style.height = '0px';
+    captureRect.classList.add('visible');
+    event.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (event) => {
+    if (!state.drag) return;
+    const x = Math.min(Math.max(event.clientX - state.drag.bounds.left, 0), state.drag.bounds.width);
+    const y = Math.min(Math.max(event.clientY - state.drag.bounds.top, 0), state.drag.bounds.height);
+    const left = Math.min(state.drag.startX, x);
+    const top = Math.min(state.drag.startY, y);
+    const width = Math.abs(x - state.drag.startX);
+    const height = Math.abs(y - state.drag.startY);
+    captureRect.style.left = `${left}px`;
+    captureRect.style.top = `${top}px`;
+    captureRect.style.width = `${width}px`;
+    captureRect.style.height = `${height}px`;
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!state.drag) return;
+    const rect = {
+      width: parseFloat(captureRect.style.width) || 0,
+      height: parseFloat(captureRect.style.height) || 0,
+    };
+    state.drag = null;
+    if (rect.width < 12 || rect.height < 12) {
+      captureRect.classList.remove('visible');
+      toast('拖动大于 12 × 12 的区域再松开');
+      return;
+    }
+    takeRegion(rect);
+  });
+
+  $$('[data-tool]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (state.capturing) {
+        deactivate();
+        return;
+      }
+      startCapture();
+    });
+  });
+  $('#overlay-cancel').addEventListener('click', (event) => {
+    event.stopPropagation();
+    deactivate();
+  });
+  $('#mode-cancel').addEventListener('click', deactivate);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') deactivate();
+  });
+
+  // 发送
+  function updateSend() {
+    sendButton.disabled = !editor.innerText.trim() && state.attachments.length === 0;
+  }
+  editor.addEventListener('input', updateSend);
+  sendButton.addEventListener('click', () => {
+    const text = editor.innerText.trim();
+    if (!text && state.attachments.length === 0) {
+      toast('先输入内容，或附上一张截图');
+      return;
+    }
+    const bubble = document.createElement('div');
+    bubble.className = 'sent-bubble';
+    bubble.innerHTML = `<span>${text || '（只发送了附件）'}</span>${state.attachments.length ? `<small>${state.attachments.length} 张截图 · 已随消息发送</small>` : ''}`;
+    sent.append(bubble);
+    editor.innerHTML = '';
+    state.attachments = [];
+    renderAttachments();
+    updateSend();
+    toast('已发送（原型模拟）');
+  });
+
+  $('#vision-on').addEventListener('click', () => { setVision(true); });
+  $('#vision-off').addEventListener('click', () => { setVision(false); });
+  $('#clear').addEventListener('click', () => {
+    state.attachments = [];
+    editor.innerHTML = '';
+    renderAttachments();
+    updateSend();
+    toast('已清空');
+  });
+  $('#demo-error').addEventListener('click', () => toast('截图失败：当前标签页不可见，请切回网页再试'));
+
+  renderAttachments();
+  updateSend();
+  updateCapability();
+</script>
+</body>
+</html>

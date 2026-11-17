@@ -13,10 +13,33 @@ export interface ProviderConfig {
 export interface ToolImage {
   data: string;
   mimeType: string;
+  width?: number;
+  height?: number;
+  size?: number;
 }
 
+/** 用户输入框附上的截图；data 是 base64，只在内存/Port 中使用，落盘时转成附件引用。 */
+export interface ImageAttachment {
+  id: string;
+  data: string;
+  mimeType: string;
+  width: number;
+  height: number;
+  size: number;
+  name?: string;
+}
+
+export type CaptureResult =
+  | { ok: true; image: ImageAttachment }
+  | {
+      ok: false;
+      cancelled?: boolean;
+      error: string;
+      reason?: 'escape' | 'cancel' | 'timeout' | 'too_small';
+    };
+
 export type ChatItem =
-  | { kind: 'user'; id: string; text: string }
+  | { kind: 'user'; id: string; text: string; attachments?: ImageAttachment[] }
   | {
       kind: 'assistant';
       id: string;
@@ -75,7 +98,8 @@ export interface SessionSnapshot {
 
 export type UiToBg =
   | { type: 'hello' }
-  | { type: 'send'; text: string }
+  | { type: 'send'; text: string; images?: ImageAttachment[] }
+  | { type: 'capture_screenshot'; requestId: string }
   | { type: 'abort' }
   | { type: 'new_thread' }
   | { type: 'save_config'; config: ProviderConfig }
@@ -95,7 +119,17 @@ export type UiToBg =
 export type BgToUi =
   | ({ type: 'ready' } & SessionSnapshot)
   | { type: 'config'; config: ProviderConfig | null }
-  | { type: 'user_message'; id: string; text: string }
+  | {
+      type: 'user_message';
+      id: string;
+      text: string;
+      attachments?: ImageAttachment[];
+    }
+  | {
+      type: 'screenshot_captured';
+      requestId: string;
+      result: CaptureResult;
+    }
   | { type: 'assistant_start'; id: string }
   | { type: 'assistant_delta'; id: string; text: string }
   | { type: 'assistant_end'; id: string; text: string; error?: string }

@@ -60,6 +60,7 @@
     "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "6.2.1",
     "@wxt-dev/module-react": "1.2.2",
+    "fake-indexeddb": "6.2.5",
     "happy-dom": "21.0.4",
     "husky": "9.1.7",
     "lint-staged": "17.6.0",

@@ -4,6 +4,7 @@ import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completio
 import type {
   BgToUi,
   ChatItem,
+  ImageAttachment,
   InteractionItem,
   ProviderConfig,
   SessionSnapshot,
@@ -196,9 +197,9 @@ export class AgentSession {
     await this.emitSessions();
   }
 
-  async send(input: string): Promise<void> {
+  async send(input: string, images: ImageAttachment[] = []): Promise<void> {
     const text = input.trim();
-    if (!text) return;
+    if (!text && images.length === 0) return;
 
     // 卡片还挂着就发新消息 = 用户选择跳过回答：卡片作废，那一轮先收尾。
     if (this.bridge.pendingCount > 0) await this.interruptPendingTurn();
@@ -211,24 +212,48 @@ export class AgentSession {
       this.emit({ type: 'error', message: '还没有配置模型。请打开设置，填入 API Key 和模型。' });
       return;
     }
+    if (images.length > 0 && this.config.supportsImages !== true) {
+      this.emit({
+        type: 'error',
+        message:
+          '当前模型没有开启图片输入，截图不会发送。请在设置里切换为支持图片的模型，或移除截图后再发送。',
+      });
+      return;
+    }
 
+    const titleSeed = text || `${images.length} 张截图`;
     if (!this.sessionId) {
       this.sessionId = crypto.randomUUID();
       this.sessionCreatedAt = Date.now();
-      this.title = createSessionTitle(text);
+      this.title = createSessionTitle(titleSeed);
     } else if (!this.title.fromPrompt) {
-      this.title = { ...this.title, fromPrompt: createSessionTitle(text).fromPrompt };
+      this.title = { ...this.title, fromPrompt: createSessionTitle(titleSeed).fromPrompt };
     }
 
     const userId = `u-${++this.seq}`;
-    this.items.push({ kind: 'user', id: userId, text });
-    this.emit({ type: 'user_message', id: userId, text });
-    this.pushTrace('run', '收到任务', text.slice(0, 160));
+    this.items.push({
+      kind: 'user',
+      id: userId,
+      text,
+      ...(images.length > 0 ? { attachments: images } : {}),
+    });
+    this.emit({
+      type: 'user_message',
+      id: userId,
+      text,
+      ...(images.length > 0 ? { attachments: images } : {}),
+    });
+    this.pushTrace('run', '收到任务', (text || `[${images.length} 张截图]`).slice(0, 160));
+
+    const promptText =
+      images.length > 0
+        ? `${text ? `${text}\n\n` : ''}[用户附上了 ${images.length} 张截图，请结合图片回答。]`
+        : text;
 
     this.turnCount = 0;
     this.setBusy(true);
 
-    const turn = this.runTurn(text);
+    const turn = this.runTurn(promptText, images);
     this.running = turn;
     await turn;
   }
@@ -247,9 +272,16 @@ export class AgentSession {
     });
   }
 
-  private async runTurn(text: string): Promise<void> {
+  private async runTurn(text: string, images: ImageAttachment[] = []): Promise<void> {
     try {
-      await this.ensureAgent().prompt(text);
+      await this.ensureAgent().prompt(
+        text,
+        images.map((image) => ({
+          type: 'image' as const,
+          data: image.data,
+          mimeType: image.mimeType,
+        })),
+      );
     } catch (error) {
       const message = errorMessage(error);
       this.emit({ type: 'error', message });
@@ -437,7 +469,7 @@ export class AgentSession {
         const text = assistantText(message);
         const failed = message.stopReason === 'error';
         let error = failed ? (message.errorMessage ?? '模型请求失败') : undefined;
-        if (failed && this.lastToolWasScreenshot()) {
+        if (failed && this.lastTurnUsedImages()) {
           error = `${error}\n\n如果当前端点不接受图片，请在设置里关闭「该模型支持图片输入」或换一个支持视觉的模型。`;
         }
 
@@ -562,11 +594,14 @@ export class AgentSession {
     return undefined;
   }
 
-  private lastToolWasScreenshot(): boolean {
+  private lastTurnUsedImages(): boolean {
     for (let index = this.items.length - 1; index >= 0; index -= 1) {
       const item = this.items[index];
       if (item?.kind === 'tool') {
         return item.name === 'screenshot' && item.status === 'ok';
+      }
+      if (item?.kind === 'user') {
+        return (item.attachments?.length ?? 0) > 0;
       }
     }
     return false;

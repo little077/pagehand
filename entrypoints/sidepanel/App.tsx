@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { type Browser, browser } from 'wxt/browser';
 import {
   type BgToUi,
+  type CaptureResult,
   type ChatItem,
+  type ImageAttachment,
   type InteractionItem,
   PORT_NAME,
   type ProviderConfig,
@@ -31,9 +33,15 @@ interface PendingModelRequest {
   timer: number;
 }
 
+interface PendingCaptureRequest {
+  resolve: (result: CaptureResult) => void;
+  timer: number;
+}
+
 const RECONNECT_BASE_DELAY_MS = 1_000;
 const RECONNECT_MAX_DELAY_MS = 15_000;
 const MODEL_LIST_TIMEOUT_MS = 20_000;
+const CAPTURE_TIMEOUT_MS = 70_000;
 
 export default function App() {
   const [connection, setConnection] = useState<Connection>('connecting');
@@ -54,6 +62,7 @@ export default function App() {
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<number | null>(null);
   const modelRequestsRef = useRef(new Map<string, PendingModelRequest>());
+  const captureRequestsRef = useRef(new Map<string, PendingCaptureRequest>());
 
   const cancelReconnect = useCallback(() => {
     if (reconnectTimerRef.current !== null) {
@@ -80,6 +89,14 @@ export default function App() {
       window.clearTimeout(pending.timer);
       pending.reject(new Error(reason));
       modelRequestsRef.current.delete(requestId);
+    }
+  }, []);
+
+  const failCaptureRequests = useCallback((reason: string) => {
+    for (const [requestId, pending] of captureRequestsRef.current) {
+      window.clearTimeout(pending.timer);
+      pending.resolve({ ok: false, error: reason });
+      captureRequestsRef.current.delete(requestId);
     }
   }, []);
 
@@ -113,6 +130,29 @@ export default function App() {
     });
   }, []);
 
+  const captureScreenshot = useCallback(() => {
+    return new Promise<CaptureResult>((resolve) => {
+      const port = portRef.current;
+      if (!port) {
+        resolve({ ok: false, error: '与后台的连接已断开，请稍后重试。' });
+        return;
+      }
+      const requestId = crypto.randomUUID();
+      const timer = window.setTimeout(() => {
+        captureRequestsRef.current.delete(requestId);
+        resolve({ ok: false, error: '截图超时，请重试。' });
+      }, CAPTURE_TIMEOUT_MS);
+      captureRequestsRef.current.set(requestId, { resolve, timer });
+      try {
+        port.postMessage({ type: 'capture_screenshot', requestId } satisfies UiToBg);
+      } catch {
+        window.clearTimeout(timer);
+        captureRequestsRef.current.delete(requestId);
+        resolve({ ok: false, error: '与后台的连接已断开，请稍后重试。' });
+      }
+    });
+  }, []);
+
   const applyMessage = useCallback(
     (message: BgToUi) => {
       switch (message.type) {
@@ -132,9 +172,22 @@ export default function App() {
         case 'user_message':
           setItems((previous) => [
             ...previous,
-            { kind: 'user', id: message.id, text: message.text },
+            {
+              kind: 'user',
+              id: message.id,
+              text: message.text,
+              ...(message.attachments ? { attachments: message.attachments } : {}),
+            },
           ]);
           return;
+        case 'screenshot_captured': {
+          const pending = captureRequestsRef.current.get(message.requestId);
+          if (!pending) return;
+          window.clearTimeout(pending.timer);
+          captureRequestsRef.current.delete(message.requestId);
+          pending.resolve(message.result);
+          return;
+        }
         case 'assistant_start':
           setItems((previous) => [
             ...previous,
@@ -259,6 +312,7 @@ export default function App() {
       setConnection('lost');
       setBusy(false);
       failModelRequests('与后台的连接已断开，请重试。');
+      failCaptureRequests('与后台的连接已断开，请重试。');
       scheduleReconnect();
     };
 
@@ -271,9 +325,17 @@ export default function App() {
       port.onDisconnect.removeListener(onDisconnect);
       cancelReconnect();
       failModelRequests('与后台的连接已断开，请重试。');
+      failCaptureRequests('与后台的连接已断开，请重试。');
       port.disconnect();
     };
-  }, [applyMessage, cancelReconnect, connectAttempt, failModelRequests, scheduleReconnect]);
+  }, [
+    applyMessage,
+    cancelReconnect,
+    connectAttempt,
+    failCaptureRequests,
+    failModelRequests,
+    scheduleReconnect,
+  ]);
 
   useEffect(() => {
     if (!toast) return;
@@ -281,7 +343,7 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  function send(text: string) {
+  function send(text: string, attachments: ImageAttachment[]) {
     if (!config) {
       setSettingsOpen(true);
       return;
@@ -291,7 +353,11 @@ export default function App() {
       setToast('后台连接已断开，正在自动重连。');
       return;
     }
-    port.postMessage({ type: 'send', text } satisfies UiToBg);
+    port.postMessage({
+      type: 'send',
+      text,
+      ...(attachments.length > 0 ? { images: attachments } : {}),
+    } satisfies UiToBg);
   }
 
   function stop() {
@@ -380,7 +446,7 @@ export default function App() {
         {items.length === 0 ? (
           <Home
             configured={Boolean(config)}
-            onPick={send}
+            onPick={(text) => send(text, [])}
             onOpenSettings={() => setSettingsOpen(true)}
           />
         ) : (
@@ -393,7 +459,9 @@ export default function App() {
         <Composer
           busy={busy && pendingInteractions.length === 0}
           configured={Boolean(config)}
+          supportsImages={config?.supportsImages === true}
           onSend={send}
+          onCapture={captureScreenshot}
           onStop={stop}
           onOpenSettings={() => setSettingsOpen(true)}
         />

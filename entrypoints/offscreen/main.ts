@@ -22,25 +22,29 @@ async function cropImage(request: OffscreenCropRequest): Promise<OffscreenCropRe
   const blob = await response.blob();
   const bitmap = await createImageBitmap(blob);
   try {
+    const source = request.crop ?? {
+      x: 0,
+      y: 0,
+      width: bitmap.width,
+      height: bitmap.height,
+    };
+    const maxDimension = request.maxDimension ?? 0;
+    const scale =
+      maxDimension > 0 ? Math.min(1, maxDimension / Math.max(source.width, source.height)) : 1;
+    const width = Math.max(1, Math.round(source.width * scale));
+    const height = Math.max(1, Math.round(source.height * scale));
+
     const canvas = document.createElement('canvas');
-    canvas.width = request.crop.width;
-    canvas.height = request.crop.height;
+    canvas.width = width;
+    canvas.height = height;
     const context = canvas.getContext('2d');
     if (!context) return { ok: false, error: 'Canvas 不可用' };
-    context.drawImage(
-      bitmap,
-      request.crop.x,
-      request.crop.y,
-      request.crop.width,
-      request.crop.height,
-      0,
-      0,
-      request.crop.width,
-      request.crop.height,
-    );
+    context.drawImage(bitmap, source.x, source.y, source.width, source.height, 0, 0, width, height);
     return {
       ok: true,
       dataUrl: canvas.toDataURL('image/jpeg', request.quality ?? 0.8),
+      width,
+      height,
     };
   } finally {
     bitmap.close();

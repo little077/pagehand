@@ -1,5 +1,6 @@
 import { type Browser, browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
+import { captureForComposer } from '@/lib/agent/capture';
 import { AgentSession } from '@/lib/agent/session';
 import { fetchOpenAIModels } from '@/lib/config/models';
 import { loadConfig, saveConfig } from '@/lib/config/storage';
@@ -45,7 +46,26 @@ export default defineBackground(() => {
         return;
       }
       case 'send': {
-        await session.send(message.text);
+        await session.send(message.text, message.images ?? []);
+        return;
+      }
+      case 'capture_screenshot': {
+        let result: Awaited<ReturnType<typeof captureForComposer>>;
+        try {
+          result = await captureForComposer();
+        } catch (error) {
+          result = {
+            ok: false,
+            error: `截图失败：${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
+        if (port) {
+          port.postMessage({
+            type: 'screenshot_captured',
+            requestId: message.requestId,
+            result,
+          } satisfies BgToUi);
+        }
         return;
       }
       case 'abort': {

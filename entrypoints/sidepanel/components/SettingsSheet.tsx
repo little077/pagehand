@@ -1,4 +1,13 @@
-import { Eye, EyeOff, KeyRound, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  Image as ImageIcon,
+  KeyRound,
+  RefreshCw,
+  ShieldCheck,
+  Type,
+  X,
+} from 'lucide-react';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -297,20 +306,43 @@ export function SettingsSheet({ open, config, onClose, onSave, onListModels }: S
             </Select>
           </Field>
 
-          <label className="flex items-start gap-2 rounded-xl border border-line bg-app px-3 py-2.5">
-            <input
-              type="checkbox"
-              checked={supportsImages}
-              onChange={(event) => setSupportsImages(event.target.checked)}
-              className="mt-0.5 size-3.5 flex-shrink-0 accent-brand"
-            />
-            <span>
-              <span className="block text-[11px] font-semibold text-ink">该模型支持图片输入</span>
-              <span className="mt-0.5 block text-[9.5px] leading-relaxed text-ink-soft">
-                开启后才能把截图发给模型。不确定就关闭，避免端点拒绝带图片的请求。
-              </span>
-            </span>
-          </label>
+          <div>
+            <div className="mb-1 flex items-baseline justify-between gap-2">
+              <Label>能力</Label>
+              <span className="text-[9.5px] font-normal text-ink-faint">模型属性</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-app p-1">
+              <button
+                type="button"
+                onClick={() => setSupportsImages(false)}
+                aria-pressed={!supportsImages}
+                className={cn(
+                  'flex h-8 items-center justify-center gap-1 rounded-lg text-[10.5px] font-semibold transition',
+                  !supportsImages
+                    ? 'bg-surface text-ink shadow-sm'
+                    : 'text-ink-soft hover:text-ink',
+                )}
+              >
+                <Type size={12} />
+                纯文本
+              </button>
+              <button
+                type="button"
+                onClick={() => setSupportsImages(true)}
+                aria-pressed={supportsImages}
+                className={cn(
+                  'flex h-8 items-center justify-center gap-1 rounded-lg text-[10.5px] font-semibold transition',
+                  supportsImages ? 'bg-surface text-ink shadow-sm' : 'text-ink-soft hover:text-ink',
+                )}
+              >
+                <ImageIcon size={12} />
+                支持图片
+              </button>
+            </div>
+            <p className="mt-1.5 text-[9px] leading-relaxed text-ink-faint">
+              不确定就选纯文本；切换模型后请重新确认一次能力。
+            </p>
+          </div>
 
           <div className="flex items-start gap-2 rounded-xl bg-app px-3 py-2.5 text-[10px] leading-relaxed text-ink-soft">
             <ShieldCheck size={14} className="mt-0.5 flex-shrink-0 text-success" />

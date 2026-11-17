@@ -1,0 +1,93 @@
+import 'fake-indexeddb/auto';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { fakeBrowser } from 'wxt/testing/fake-browser';
+import type { SessionRecord } from '@/lib/sessions/record';
+
+const IMAGE = 'aGVsbG8=';
+
+let store: typeof import('@/lib/sessions/store');
+
+beforeAll(async () => {
+  store = await import('@/lib/sessions/store');
+});
+
+beforeEach(() => {
+  fakeBrowser.reset();
+});
+
+function record(id: string): SessionRecord {
+  return {
+    id,
+    createdAt: 1,
+    updatedAt: 2,
+    title: { custom: null, ai: null, fromPrompt: '测试会话' },
+    model: null,
+    items: [
+      {
+        kind: 'user',
+        id: 'u-1',
+        text: '看图',
+        attachments: [
+          {
+            id: 'a-1',
+            data: IMAGE,
+            mimeType: 'image/jpeg',
+            width: 10,
+            height: 10,
+            size: 5,
+          },
+        ],
+      },
+    ],
+    messages: [
+      {
+        role: 'user',
+        content: [{ type: 'image', data: IMAGE, mimeType: 'image/jpeg' }],
+      },
+    ],
+  };
+}
+
+describe('IndexedDB v2', () => {
+  it('写入、列表、读取、删除都走 attachments + sessionMeta', async () => {
+    const id = `session-${Date.now()}`;
+    await store.writeSession(record(id));
+
+    const summaries = await store.listSessions();
+    expect(summaries.find((item) => item.id === id)).toMatchObject({
+      title: '测试会话',
+      messageCount: 1,
+    });
+
+    const loaded = await store.readSession(id);
+    if (!loaded) throw new Error('session not loaded');
+    const user = loaded.items[0];
+    expect(user?.kind === 'user' ? user.attachments?.[0]?.data : null).toBe(IMAGE);
+    const content = (loaded.messages[0] as { content: Array<Record<string, unknown>> }).content;
+    expect(content[0]).toEqual({ type: 'image', data: IMAGE, mimeType: 'image/jpeg' });
+
+    await store.removeSession(id);
+    expect(await store.readSession(id)).toBeNull();
+    expect((await store.listSessions()).some((item) => item.id === id)).toBe(false);
+  });
+
+  it('相同图片重复写入只保留一份附件', async () => {
+    const id = `session-${Date.now()}-dedupe`;
+    await store.writeSession(record(id));
+    await store.writeSession(record(id));
+
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('pagehand-sessions');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const count = await new Promise<number>((resolve, reject) => {
+      const request = db.transaction('attachments', 'readonly').objectStore('attachments').count();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    expect(count).toBe(1);
+    await store.removeSession(id);
+  });
+});

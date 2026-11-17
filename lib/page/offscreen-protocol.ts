@@ -15,11 +15,14 @@ export type OffscreenConvertResponse =
 export interface OffscreenCropRequest {
   type: typeof OFFSCREEN_CROP_MESSAGE;
   dataUrl: string;
-  crop: { x: number; y: number; width: number; height: number };
+  crop?: { x: number; y: number; width: number; height: number };
+  maxDimension?: number;
   quality?: number;
 }
 
-export type OffscreenCropResponse = { ok: true; dataUrl: string } | { ok: false; error: string };
+export type OffscreenCropResponse =
+  | { ok: true; dataUrl: string; width: number; height: number }
+  | { ok: false; error: string };
 
 export function isConvertRequest(value: unknown): value is OffscreenConvertRequest {
   if (!value || typeof value !== 'object') return false;
@@ -33,11 +36,20 @@ export function isCropRequest(value: unknown): value is OffscreenCropRequest {
     type?: unknown;
     dataUrl?: unknown;
     crop?: Record<string, unknown> | null;
+    maxDimension?: unknown;
   };
   if (message.type !== OFFSCREEN_CROP_MESSAGE || typeof message.dataUrl !== 'string') {
     return false;
   }
-  const crop = message.crop;
-  if (!crop || typeof crop !== 'object') return false;
-  return ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(crop[key]));
+  if (message.crop !== undefined) {
+    const crop = message.crop;
+    if (!crop || typeof crop !== 'object') return false;
+    if (!['x', 'y', 'width', 'height'].every((key) => Number.isFinite(crop[key]))) {
+      return false;
+    }
+  }
+  if (message.maxDimension !== undefined && !Number.isFinite(message.maxDimension)) {
+    return false;
+  }
+  return true;
 }

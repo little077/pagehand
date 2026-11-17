@@ -1,33 +1,54 @@
 // ─── Composer：基于 tiptap 的纯文本输入框 ───
-// 用 tiptap 而非 textarea：占位符文案能随连接/生成状态实时切换，
-// 后续要做 / 技能、@ 页面元素时也不用推倒重来。
-// 当前只开纯文本 + 换行，附件、语音、技能等能力尚未接入。
+// 工具栏和附件托盘放在 EditorContent 外面：编辑器只保留文字，截图作为消息级附件。
 
 import Placeholder from '@tiptap/extension-placeholder';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { ArrowUp, Loader2, Settings2, Square } from 'lucide-react';
+import { ArrowUp, Camera, Eye, Loader2, Settings2, Square, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import type { CaptureResult, ImageAttachment } from '@/lib/ipc/protocol';
+import { cn } from '@/lib/utils';
 
 interface ComposerProps {
   busy: boolean;
   configured: boolean;
-  onSend: (text: string) => void;
+  supportsImages: boolean;
+  onSend: (text: string, attachments: ImageAttachment[]) => void;
+  onCapture: () => Promise<CaptureResult>;
   onStop: () => void;
   onOpenSettings: () => void;
 }
 
-export function Composer({ busy, configured, onSend, onStop, onOpenSettings }: ComposerProps) {
+const MAX_ATTACHMENTS = 3;
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
+
+export function Composer({
+  busy,
+  configured,
+  supportsImages,
+  onSend,
+  onCapture,
+  onStop,
+  onOpenSettings,
+}: ComposerProps) {
   const [empty, setEmpty] = useState(true);
+  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  const [capturing, setCapturing] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
   // editor 只创建一次，最新状态经 ref 提供给键盘回调与占位符函数。
   const submitRef = useRef<() => void>(() => {});
+  const attachmentsRef = useRef<ImageAttachment[]>([]);
   const placeholderRef = useRef('');
+  attachmentsRef.current = attachments;
 
   placeholderRef.current = busy
     ? '正在生成，可点击右侧停止…'
-    : configured
-      ? '问问这一页，或让它整理成表…'
-      : '先在设置里填入模型 API Key…';
+    : capturing
+      ? '正在等你在页面上完成截图…'
+      : configured
+        ? '问问这一页，或让它整理成表…'
+        : '先在设置里填入模型 API Key…';
 
   const editor = useEditor({
     extensions: [
@@ -73,27 +94,146 @@ export function Composer({ busy, configured, onSend, onStop, onOpenSettings }: C
   });
 
   submitRef.current = () => {
-    if (!editor || busy) return;
+    if (!editor || busy || capturing) return;
+    if (attachmentsRef.current.length > 0 && !supportsImages) return;
     // Shift+Enter 产生的是 hardBreak，默认 getText 会把它序列化成空串，这里补回换行。
     const text = editor
       .getText({ blockSeparator: '\n', textSerializers: { hardBreak: () => '\n' } })
       .trim();
-    if (!text) return;
-    onSend(text);
+    const images = attachmentsRef.current;
+    if (!text && images.length === 0) return;
+    onSend(text, images);
     editor.commands.clearContent(true);
     setEmpty(true);
+    setAttachments([]);
+    setCaptureError(null);
   };
 
-  // 生成中锁编辑，草稿保留，结束后恢复。
+  // 生成中或截图时锁编辑，草稿保留，结束后恢复。
   useEffect(() => {
-    editor?.setEditable(!busy);
-  }, [busy, editor]);
+    editor?.setEditable(!busy && !capturing);
+  }, [busy, capturing, editor]);
 
-  const canSend = !empty && !busy;
+  const canSend =
+    (!empty || attachments.length > 0) &&
+    !busy &&
+    !capturing &&
+    (attachments.length === 0 || supportsImages);
+  const attachmentsBlocked = attachments.length > 0 && !supportsImages;
+
+  const startCapture = async () => {
+    if (!supportsImages || busy || capturing) return;
+    if (attachmentsRef.current.length >= MAX_ATTACHMENTS) {
+      setCaptureError(`每条消息最多 ${MAX_ATTACHMENTS} 张截图`);
+      return;
+    }
+    setCaptureError(null);
+    setCapturing(true);
+    try {
+      const result = await onCapture();
+      if (!result.ok) {
+        if (!result.cancelled || result.reason === 'too_small' || result.reason === 'timeout') {
+          setCaptureError(result.error);
+        }
+        return;
+      }
+      const image = result.image;
+      const total = attachmentsRef.current.reduce((sum, item) => sum + item.size, 0) + image.size;
+      if (image.size > MAX_IMAGE_BYTES) {
+        setCaptureError('单张截图不能超过 2 MB');
+        return;
+      }
+      if (total > MAX_TOTAL_BYTES) {
+        setCaptureError('附件总大小不能超过 4 MB');
+        return;
+      }
+      setAttachments((previous) => [...previous, image]);
+    } catch (error) {
+      setCaptureError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCapturing(false);
+    }
+  };
 
   return (
     <div className="flex-shrink-0 border-t border-line bg-surface/85 px-3 py-2.5 backdrop-blur">
-      <div className="rounded-2xl border border-line-strong bg-surface p-1.5 shadow-[0_2px_10px_rgb(29_55_76_/_5%)] focus-within:border-brand/45 focus-within:ring-2 focus-within:ring-brand/10">
+      <div
+        className={cn(
+          'rounded-2xl border border-line-strong bg-surface p-1.5 shadow-[0_2px_10px_rgb(29_55_76_/_5%)]',
+          capturing
+            ? 'border-success/45 ring-2 ring-success/10'
+            : 'focus-within:border-brand/45 focus-within:ring-2 focus-within:ring-brand/10',
+        )}
+      >
+        <div className="flex items-center gap-1 border-b border-line/70 px-0.5 pb-1">
+          <button
+            type="button"
+            onClick={() => void startCapture()}
+            disabled={!supportsImages || busy || capturing}
+            title={supportsImages ? '拖动选择截图区域' : '当前模型不支持图片输入'}
+            className={cn(
+              'flex h-6 items-center gap-1 rounded-md border border-transparent px-1.5 text-[9.5px] font-semibold text-ink-soft transition hover:bg-surface-soft hover:text-ink disabled:cursor-not-allowed disabled:opacity-40',
+              capturing && 'border-success/25 bg-success/10 text-success',
+            )}
+          >
+            <Camera size={11} />
+            截屏
+          </button>
+          <span
+            className={cn(
+              'ml-auto inline-flex h-5 items-center gap-1 rounded-full px-1.5 text-[8px] font-bold',
+              supportsImages ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning',
+            )}
+          >
+            <Eye size={9} />
+            {supportsImages ? '视觉模型' : '纯文本模型'}
+          </span>
+        </div>
+
+        {capturing && (
+          <div className="flex items-center gap-1.5 border-b border-success/20 bg-success/[0.06] px-2 py-1 text-[9px] text-success">
+            <span className="size-1.5 animate-pulse rounded-full bg-success" />
+            <span className="min-w-0 flex-1 truncate">截屏：在页面上拖动选择区域，Esc 取消</span>
+          </div>
+        )}
+
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-1 pt-1.5">
+            {attachments.map((image) => (
+              <div
+                key={image.id}
+                className="relative w-[86px] overflow-hidden rounded-lg border border-line bg-surface"
+              >
+                <img
+                  src={`data:${image.mimeType};base64,${image.data}`}
+                  alt="截图附件"
+                  className="h-12 w-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAttachments((previous) => previous.filter((item) => item.id !== image.id))
+                  }
+                  aria-label="移除截图"
+                  className="absolute right-1 top-1 flex size-4 items-center justify-center rounded-full bg-ink/60 text-white"
+                >
+                  <X size={9} />
+                </button>
+                <div className="px-1.5 py-1 text-[8px] text-ink-soft tabular-nums">
+                  {image.width}×{image.height}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {captureError && <p className="px-2 pt-1 text-[9px] text-danger">{captureError}</p>}
+        {attachmentsBlocked && (
+          <p className="px-2 pt-1 text-[9px] text-warning">
+            当前模型是纯文本，截图不会发给模型。请先移除截图，或在设置里切换支持图片的模型。
+          </p>
+        )}
+
         <EditorContent editor={editor} className="composer-editor" />
         <div className="flex items-center justify-between gap-2 px-0.5 pt-0.5">
           {!configured ? (
@@ -108,6 +248,7 @@ export function Composer({ busy, configured, onSend, onStop, onOpenSettings }: C
           ) : (
             <span className="px-1 text-[9.5px] text-ink-faint">
               Enter 发送 · Shift + Enter 换行
+              {attachments.length > 0 ? ` · ${attachments.length}/${MAX_ATTACHMENTS} 张截图` : ''}
             </span>
           )}
 

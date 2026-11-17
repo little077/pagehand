@@ -128,26 +128,45 @@ async function sendCropRequest(request: OffscreenCropRequest): Promise<Offscreen
   return response;
 }
 
-/** 在离屏文档里按像素矩形裁剪截图，返回 JPEG data URL。 */
-export async function cropScreenshot(
+/**
+ * 在离屏文档里裁剪/缩放截图。crop 省略表示整张图；maxDimension 限制最长边。
+ */
+export async function transformScreenshot(
   dataUrl: string,
-  crop: { x: number; y: number; width: number; height: number },
+  crop: { x: number; y: number; width: number; height: number } | null,
   quality = 0.8,
-): Promise<string> {
+  maxDimension?: number,
+): Promise<{ dataUrl: string; width: number; height: number }> {
   await ensureOffscreenDocument();
-  const request: OffscreenCropRequest = { type: OFFSCREEN_CROP_MESSAGE, dataUrl, crop, quality };
+  const request: OffscreenCropRequest = {
+    type: OFFSCREEN_CROP_MESSAGE,
+    dataUrl,
+    ...(crop ? { crop } : {}),
+    quality,
+    ...(maxDimension ? { maxDimension } : {}),
+  };
 
   let response: OffscreenCropResponse;
   try {
-    response = await withTimeout(sendCropRequest(request), CONVERT_TIMEOUT_MS, '截图裁剪');
+    response = await withTimeout(sendCropRequest(request), CONVERT_TIMEOUT_MS, '截图处理');
   } catch (error) {
     if (!/Receiving end does not exist|Could not establish connection/i.test(String(error))) {
       throw error;
     }
     await new Promise((resolve) => setTimeout(resolve, 80));
-    response = await withTimeout(sendCropRequest(request), CONVERT_TIMEOUT_MS, '截图裁剪');
+    response = await withTimeout(sendCropRequest(request), CONVERT_TIMEOUT_MS, '截图处理');
   }
 
   if (!response.ok) throw new Error(response.error);
-  return response.dataUrl;
+  return { dataUrl: response.dataUrl, width: response.width, height: response.height };
+}
+
+/** 兼容旧调用：裁剪并返回 JPEG data URL。 */
+export async function cropScreenshot(
+  dataUrl: string,
+  crop: { x: number; y: number; width: number; height: number },
+  quality = 0.8,
+): Promise<string> {
+  const result = await transformScreenshot(dataUrl, crop, quality);
+  return result.dataUrl;
 }

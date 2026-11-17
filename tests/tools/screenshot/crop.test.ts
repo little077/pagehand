@@ -109,8 +109,8 @@ describe('离屏裁剪消息校验', () => {
     ).toBe(true);
   });
 
-  it('拒绝缺少裁剪矩形或类型不对的消息', () => {
-    expect(isCropRequest({ type: 'pagehand:crop-image', dataUrl: 'x' })).toBe(false);
+  it('省略裁剪矩形表示整图缩放；矩形类型不对时拒绝', () => {
+    expect(isCropRequest({ type: 'pagehand:crop-image', dataUrl: 'x' })).toBe(true);
     expect(
       isCropRequest({
         type: 'pagehand:crop-image',
@@ -119,5 +119,8 @@ describe('离屏裁剪消息校验', () => {
       }),
     ).toBe(false);
     expect(isCropRequest({ type: 'other', dataUrl: 'x', crop: {} })).toBe(false);
+    expect(isCropRequest({ type: 'pagehand:crop-image', dataUrl: 'x', maxDimension: 'big' })).toBe(
+      false,
+    );
   });
 });
