@@ -58,11 +58,12 @@ pnpm dev
 entrypoints/
   background.ts          后台 Service Worker：唯一 Agent 运行时
   sidepanel/             侧边栏 UI（React）
+  offscreen/             离屏文档：HTML → Markdown / Readability
 lib/
   agent/                 Agent 构造、系统提示词、模型适配、后台保活
   config/                服务商预设与本地密钥存储
   ipc/                   侧边栏 ↔ 后台的 Port 消息协议
-  page/                  页面快照提取（注入到目标页执行）
+  page/                  页面读取：注入抽取、子框架发现、离屏 Markdown 转换
   sessions/              会话记录、标题规则与 IndexedDB 存储
   tools/                 工具注册
 tests/                   单元测试

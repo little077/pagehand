@@ -29,7 +29,12 @@ const readTabGate: ToolGate = {
       // 标签已经关了：交给工具自己的报错，门禁不抢话。
       return null;
     }
-    if (tab.active) return null;
+    // 只看 active 不够：每个窗口都有一个 active 标签，用户可能根本没在看那个窗口。
+    // 只有「活动标签 + 所在窗口是当前焦点窗口」才算用户正看着它。
+    const focused = await browser.windows
+      .getLastFocused({ windowTypes: ['normal'] })
+      .catch(() => undefined);
+    if (tab.active && focused?.id === tab.windowId) return null;
 
     const title = (tab.title ?? '').trim() || '未命名页面';
     const origin = originOfUrl(tab.url);

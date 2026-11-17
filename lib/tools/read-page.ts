@@ -1,96 +1,80 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from 'typebox';
-import { browser } from 'wxt/browser';
 import {
-  extractPageSnapshot,
-  formatSnapshotForModel,
-  type PageSnapshot,
-} from '@/lib/page/snapshot';
-import { errorMessage } from './errors';
+  READ_MODE_LABEL,
+  type ReadErrorCode,
+  type ReadMode,
+  readErrorCode,
+  readErrorMessage,
+  readPage,
+} from '@/lib/page/reader';
+import { formatReadResultForModel } from './format';
+import { readExtractionParameters } from './read-params';
 
-type ReadPageDetails =
+export type ReadToolDetails =
   | {
       title: string;
       url: string;
+      mode: ReadMode;
+      modeLabel: string;
+      frameId: number;
       totalChars: number;
       truncated: boolean;
-      headingCount: number;
-      linkCount: number;
+      frameCount: number;
+      tabId?: number;
     }
-  | { error: string; url?: string };
+  | { error: string; code: ReadErrorCode | 'unknown'; tabId?: number };
 
-const parameters = Type.Object({});
+const parameters = Type.Object({ ...readExtractionParameters });
 
-export const readPageTool: AgentTool<typeof parameters, ReadPageDetails> = {
+export const readPageTool: AgentTool<typeof parameters, ReadToolDetails> = {
   name: 'read_page',
   label: '读取当前页面',
   description:
-    '读取用户当前标签页的标题、正文、标题结构和链接列表。当问题涉及“这个页面 / 当前页 / 这篇文章 / 网页上写了什么”时调用。只读，不点击、不提交、不修改页面。不要用它打开新网页，也不要用它读取浏览器内部页面（chrome://、扩展商店）。',
+    '读取用户当前正在看的这个标签页的正文。用户说“这个页面 / 当前页 / 我正看的 / 这篇文章 / 页面上写了什么”时用它。' +
+    '默认把整页转成 Markdown，标题、链接、图片都保留，链接是绝对地址。' +
+    '长文章用 mode="article" 去掉导航和侧栏；只想要文字用 mode="text"；排查页面结构用 mode="html"。' +
+    '可以用 selector 只读某一块，用 frame_id 读页面里的子框架。' +
+    '如果用户指的是浏览器里的另一个标签页（“另一个页面 / 后台那个 / 我刚才开的 / 我开着的其他页面”），不要用这个工具：' +
+    '先调用 list_tabs 找到 tab_id，再用 read_tab。' +
+    '只读，不点击、不提交、不修改页面。不要读 chrome:// 或扩展商店，也不要指望它读 PDF。',
   parameters,
   replay: 'safe',
-  async execute(_toolCallId, _params, signal) {
+  async execute(_toolCallId, params, signal) {
     if (signal?.aborted) {
       return {
         isError: true,
-        content: [{ type: 'text', text: '读取已取消。' }],
-        details: { error: 'aborted' },
-      };
-    }
-
-    const [tab] = await browser.tabs.query({ active: true, lastFocusedWindow: true });
-    if (!tab?.id) {
-      return {
-        isError: true,
-        content: [{ type: 'text', text: '找不到当前标签页，请先打开一个网页再试。' }],
-        details: { error: 'no_active_tab' },
-      };
-    }
-
-    if (tab.url && !/^https?:/i.test(tab.url)) {
-      return {
-        isError: true,
-        content: [
-          {
-            type: 'text',
-            text: '当前标签页不是普通网页（可能是浏览器内部页或扩展商店），Pagehand 无法读取。请切换到一个 http/https 网页。',
-          },
-        ],
-        details: { error: 'unsupported_scheme', url: tab.url },
+        content: [{ type: 'text', text: '读取页面已取消。' }],
+        details: { error: 'aborted', code: 'unknown' },
       };
     }
 
     try {
-      const results = await browser.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: extractPageSnapshot,
+      const result = await readPage({
+        mode: params.mode,
+        selector: params.selector,
+        maxLength: params.max_length,
+        frameId: params.frame_id,
       });
-      const snapshot = results[0]?.result as PageSnapshot | undefined;
-      if (!snapshot) {
-        throw new Error('页面没有返回内容');
-      }
 
       return {
-        content: [{ type: 'text', text: formatSnapshotForModel(snapshot) }],
+        content: [{ type: 'text', text: formatReadResultForModel(result) }],
         details: {
-          title: snapshot.title,
-          url: snapshot.url,
-          totalChars: snapshot.totalChars,
-          truncated: snapshot.truncated,
-          headingCount: snapshot.headings.length,
-          linkCount: snapshot.links.length,
+          title: result.title,
+          url: result.url,
+          mode: result.mode,
+          modeLabel: READ_MODE_LABEL[result.mode],
+          frameId: result.frameId,
+          totalChars: result.totalChars,
+          truncated: result.truncated,
+          frameCount: result.frames.length,
         },
       };
     } catch (error) {
-      const message = errorMessage(error);
       return {
         isError: true,
-        content: [
-          {
-            type: 'text',
-            text: `读取页面失败：${message}。可能是当前标签页没有授权，回到要读取的页面后重新点击扩展图标再试。`,
-          },
-        ],
-        details: { error: message },
+        content: [{ type: 'text', text: readErrorMessage(error) }],
+        details: { error: readErrorMessage(error), code: readErrorCode(error) },
       };
     }
   },

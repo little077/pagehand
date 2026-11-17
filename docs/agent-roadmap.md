@@ -108,7 +108,7 @@ Pagehand 的消息模型已经是 user / assistant / tool 三类（`lib/ipc/prot
 
 - `lib/tools/list-tabs.ts`：`browser.tabs.query({ currentWindow: true })`，过滤掉浏览器内部页。
 - `lib/tools/read-selection.ts`：注入 `window.getSelection()`，兼容输入框 / 文本域的选区。
-- `lib/tools/read-tab.ts`：复用 `lib/page/snapshot.ts`，按 `tabId` 注入抽取。
+- `lib/tools/read-tab.ts`：复用 `lib/page/reader.ts`，按 `tabId` 注入抽取。
 - `lib/tools/format.ts`：给模型看的标签页 / 选中文本格式化，纯函数可单测。
 - `lib/tools/index.ts`：注册四个工具并同步白名单。
 - `lib/agent/session.ts`：`MAX_TURNS` 从 4 提到 8；按 `toolCallId` 匹配结果，记录耗时与摘要。

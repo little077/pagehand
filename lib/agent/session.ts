@@ -562,7 +562,14 @@ export class AgentSession {
       const title = typeof details.title === 'string' ? details.title : '当前页面';
       const chars = typeof details.totalChars === 'number' ? details.totalChars : 0;
       const truncated = details.truncated === true;
-      return `已读取「${title}」 · ${chars} 字${truncated ? '（正文已截断）' : ''}`;
+      const modeLabel = typeof details.modeLabel === 'string' ? details.modeLabel : '';
+      const frameId = typeof details.frameId === 'number' ? details.frameId : 0;
+      const frameCount = typeof details.frameCount === 'number' ? details.frameCount : 0;
+      const parts = [`已读取「${title}」`, `${chars} 字`];
+      if (modeLabel) parts.push(modeLabel);
+      if (frameId > 0) parts.push(`子框架 ${frameId}`);
+      else if (frameCount > 0) parts.push(`发现 ${frameCount} 个子框架`);
+      return `${parts.join(' · ')}${truncated ? '（已截断）' : ''}`;
     }
     if (name === 'list_tabs' && details) {
       const count = typeof details.count === 'number' ? details.count : 0;

@@ -18,7 +18,7 @@ export const listTabsTool: AgentTool<typeof parameters, ListTabsDetails> = {
   name: 'list_tabs',
   label: '列出标签页',
   description:
-    '列出用户浏览器里已打开的网页标签页：tab_id、标题、URL、是否当前页。当用户说“我开了哪些页面 / 另一个标签页 / 刚才那个页面”，或任务需要跨多个已开页面时先调用。只读，不读正文、不切换、不关闭标签。',
+    '列出用户浏览器里已打开的网页标签页：tab_id、标题、URL、是否当前页。当用户说“我开了哪些页面 / 另一个标签页 / 刚才那个页面”，或任务需要跨多个已开页面时先调用。默认只列当前窗口；没找到目标时再用 all_windows=true 列出所有窗口。只读，不读正文、不切换、不关闭标签。',
   parameters,
   replay: 'safe',
   async execute(_toolCallId, params, signal) {
