@@ -580,6 +580,21 @@ export class AgentSession {
       const chars = typeof details.chars === 'number' ? details.chars : 0;
       return `已读取选中文本 · ${chars} 字${details.truncated === true ? '（已截断）' : ''}`;
     }
+    if (name === 'inspect' && details) {
+      if (details.cached === true) return '与上次检查相同，页面没有变化';
+      if (details.scope_miss === true) return '没有找到指定的区域';
+      const total = typeof details.total === 'number' ? details.total : 0;
+      if (total === 0) {
+        const scopeTotal = typeof details.scope_total === 'number' ? details.scope_total : 0;
+        return scopeTotal > 0 ? '当前筛选没有匹配到元素' : '没有找到可操作元素';
+      }
+      const parts = [`找到 ${total} 个可操作元素`];
+      const hidden = typeof details.hidden_count === 'number' ? details.hidden_count : 0;
+      const covered = typeof details.covered_count === 'number' ? details.covered_count : 0;
+      if (hidden > 0) parts.push(`${hidden} 个不可见`);
+      if (covered > 0) parts.push(`${covered} 个被遮挡`);
+      return parts.join(' · ');
+    }
     if (name === 'ask_user' && details) {
       const answers = details.answers as Record<string, unknown> | undefined;
       const count = answers ? Object.keys(answers).length : 0;

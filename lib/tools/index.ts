@@ -1,5 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { askUserTool } from './ask-user';
+import { inspectTool } from './inspect';
 import { listTabsTool } from './list-tabs';
 import { readPageTool } from './read-page';
 import { readSelectionTool } from './read-selection';
@@ -10,6 +11,7 @@ export const PAGEHAND_TOOLS: AgentTool[] = [
   listTabsTool,
   readTabTool,
   readSelectionTool,
+  inspectTool,
   askUserTool,
 ];
 

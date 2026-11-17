@@ -1,65 +1,28 @@
-import { useEffect, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import type { ChatItem, InteractionItem } from '@/lib/ipc/protocol';
-import { ToolCard } from './ToolCard';
+import { useEffect, useMemo, useRef } from 'react';
+import type { ChatItem } from '@/lib/ipc/protocol';
+import { groupConversation, type UserItem } from '../lib/runs';
+import { AgentRun } from './AgentRun';
+import { AssistantBubble } from './AssistantBubble';
 
 interface MessageListProps {
   items: ChatItem[];
+  busy: boolean;
+  onStop: () => void;
 }
 
-type FlowItem = Exclude<ChatItem, InteractionItem>;
-
-function TypingDots() {
+function UserBubble({ item }: { item: UserItem }) {
   return (
-    <span className="inline-flex items-center gap-1 py-0.5">
-      <span className="size-1.5 animate-bounce rounded-full bg-ink-faint [animation-delay:-0.24s]" />
-      <span className="size-1.5 animate-bounce rounded-full bg-ink-faint [animation-delay:-0.12s]" />
-      <span className="size-1.5 animate-bounce rounded-full bg-ink-faint" />
-    </span>
-  );
-}
-
-function AssistantBubble({ item }: { item: Extract<ChatItem, { kind: 'assistant' }> }) {
-  const empty = item.text.trim().length === 0;
-
-  return (
-    <div className="ph-rise flex items-start gap-2.5">
-      <span className="mt-0.5 flex size-6 flex-shrink-0 items-center justify-center rounded-lg border border-line-strong bg-surface text-[9px] font-bold tracking-tight text-brand">
-        PH
-      </span>
-      <div
-        className={`min-w-0 flex-1 rounded-2xl rounded-tl-md border px-3.5 py-3 shadow-[0_1px_0_rgb(29_55_76_/_3%)] ${
-          item.status === 'error' ? 'border-danger/25 bg-danger/[0.04]' : 'border-line bg-surface'
-        }`}
-      >
-        {empty && item.status === 'streaming' ? (
-          <TypingDots />
-        ) : (
-          <div className="ph-markdown">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
-            {item.status === 'streaming' && <span className="ph-caret" />}
-          </div>
-        )}
-        {item.error && (
-          <p className="mt-2 border-t border-danger/15 pt-2 text-[11px] leading-relaxed text-danger">
-            {item.error}
-          </p>
-        )}
+    <div className="ph-rise flex justify-end">
+      <div className="max-w-[86%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-brand px-3.5 py-2.5 text-[12.5px] leading-relaxed text-white shadow-sm">
+        {item.text}
       </div>
     </div>
   );
 }
 
-export function MessageList({ items }: MessageListProps) {
+export function MessageList({ items, busy, onStop }: MessageListProps) {
   const endRef = useRef<HTMLDivElement>(null);
-  // 交互卡片挂在输入框上方，不占对话流；对话流里只留它对应的那条步骤记录。
-  const visible = items.filter(
-    (item): item is FlowItem =>
-      item.kind !== 'interaction' &&
-      (item.kind !== 'assistant' || item.status !== 'done' || item.text.trim().length > 0),
-  );
-  let step = 0;
+  const blocks = useMemo(() => groupConversation(items, { busy }), [items, busy]);
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -68,28 +31,34 @@ export function MessageList({ items }: MessageListProps) {
 
   return (
     <div className="space-y-3 px-3.5 py-4">
-      {visible.map((item, index) => {
-        if (item.kind === 'user') {
-          step = 0;
+      {blocks.map((block) => {
+        if (block.kind === 'user') {
+          return <UserBubble key={block.item.id} item={block.item} />;
+        }
+
+        const { run } = block;
+
+        // 没有工具调用的纯问答不套运行块，保持简单对话的阅读节奏。
+        if (run.tools.length === 0) {
+          const waiting = run.status === 'running' && !run.answer && run.notes.length === 0;
+          if (waiting) {
+            return <AgentRun key={run.id} run={run} onStop={onStop} />;
+          }
           return (
-            <div key={item.id} className="ph-rise flex justify-end">
-              <div className="max-w-[86%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-brand px-3.5 py-2.5 text-[12.5px] leading-relaxed text-white shadow-sm">
-                {item.text}
-              </div>
+            <div key={run.id} className="space-y-3">
+              {run.notes.map((note) => (
+                <AssistantBubble key={note.id} item={note} />
+              ))}
+              {run.answer && <AssistantBubble item={run.answer} />}
             </div>
           );
         }
-        if (item.kind === 'assistant') {
-          return <AssistantBubble key={item.id} item={item} />;
-        }
-        step += 1;
+
         return (
-          <ToolCard
-            key={item.id}
-            item={item}
-            step={step}
-            last={visible[index + 1]?.kind !== 'tool'}
-          />
+          <div key={run.id} className="space-y-3">
+            <AgentRun run={run} onStop={onStop} />
+            {run.answer && <AssistantBubble item={run.answer} />}
+          </div>
         );
       })}
       <div ref={endRef} />

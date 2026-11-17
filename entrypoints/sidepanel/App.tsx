@@ -383,7 +383,7 @@ export default function App() {
             onOpenSettings={() => setSettingsOpen(true)}
           />
         ) : (
-          <MessageList items={items} />
+          <MessageList items={items} busy={busy} onStop={stop} />
         )}
       </main>
 
