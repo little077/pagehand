@@ -5,6 +5,7 @@ import { listTabsTool } from './list-tabs';
 import { readPageTool } from './read-page';
 import { readSelectionTool } from './read-selection';
 import { readTabTool } from './read-tab';
+import { screenshotTool } from './screenshot';
 
 export const PAGEHAND_TOOLS: AgentTool[] = [
   readPageTool,
@@ -12,6 +13,7 @@ export const PAGEHAND_TOOLS: AgentTool[] = [
   readTabTool,
   readSelectionTool,
   inspectTool,
+  screenshotTool,
   askUserTool,
 ];
 

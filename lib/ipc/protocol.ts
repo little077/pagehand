@@ -6,6 +6,13 @@ export interface ProviderConfig {
   baseUrl: string;
   modelId: string;
   apiKey: string;
+  /** 当前模型是否接受图片输入；旧配置没有这个字段时按 false 处理。 */
+  supportsImages?: boolean;
+}
+
+export interface ToolImage {
+  data: string;
+  mimeType: string;
 }
 
 export type ChatItem =
@@ -26,6 +33,7 @@ export type ChatItem =
       status: 'running' | 'ok' | 'error';
       summary: string;
       details?: unknown;
+      images?: ToolImage[];
       startedAt: number;
       durationMs?: number;
     }
@@ -106,6 +114,7 @@ export type BgToUi =
       ok: boolean;
       summary: string;
       details?: unknown;
+      images?: ToolImage[];
       durationMs?: number;
     }
   | { type: 'trace'; entry: TraceEntry }

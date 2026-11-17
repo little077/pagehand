@@ -188,6 +188,7 @@ export default function App() {
                     status: message.ok ? 'ok' : 'error',
                     summary: message.summary,
                     details: message.details,
+                    images: message.images,
                     durationMs: message.durationMs ?? Date.now() - item.startedAt,
                   }
                 : item,
@@ -383,7 +384,7 @@ export default function App() {
             onOpenSettings={() => setSettingsOpen(true)}
           />
         ) : (
-          <MessageList items={items} busy={busy} onStop={stop} />
+          <MessageList items={items} busy={busy} />
         )}
       </main>
 

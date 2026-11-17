@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Ban,
+  Camera,
   CheckCircle2,
   ChevronDown,
   Files,
@@ -8,7 +9,6 @@ import {
   Loader2,
   MessageCircleQuestion,
   MousePointerClick,
-  Square,
   TextSelect,
   Wrench,
 } from 'lucide-react';
@@ -24,6 +24,7 @@ const TOOL_ICONS: Record<string, typeof FileText> = {
   read_tab: FileText,
   read_selection: TextSelect,
   inspect: MousePointerClick,
+  screenshot: Camera,
   ask_user: MessageCircleQuestion,
 };
 
@@ -140,6 +141,14 @@ function StepRow({
             <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-md bg-app p-2 text-[9px] leading-relaxed text-ink-soft">
               {pretty(tool.details)}
             </pre>
+            {tool.images?.map((image) => (
+              <img
+                key={`${tool.id}-${image.mimeType}-${image.data.slice(0, 16)}`}
+                src={`data:${image.mimeType};base64,${image.data}`}
+                alt="工具截图"
+                className="mt-2 max-h-72 w-full rounded-md border border-line object-contain"
+              />
+            ))}
           </div>
         </div>
       )}
@@ -147,7 +156,7 @@ function StepRow({
   );
 }
 
-export function AgentRun({ run, onStop }: { run: RunView; onStop: () => void }) {
+export function AgentRun({ run }: { run: RunView }) {
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [expandedToolId, setExpandedToolId] = useState<string | null>(null);
@@ -210,17 +219,6 @@ export function AgentRun({ run, onStop }: { run: RunView; onStop: () => void }) 
             )}
           />
         </Button>
-        {run.status === 'running' && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="停止这一轮"
-            onClick={onStop}
-          >
-            <Square size={11} />
-          </Button>
-        )}
       </div>
 
       {open && (

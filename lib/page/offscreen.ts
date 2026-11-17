@@ -1,8 +1,11 @@
 import { browser } from 'wxt/browser';
 import {
   OFFSCREEN_CONVERT_MESSAGE,
+  OFFSCREEN_CROP_MESSAGE,
   type OffscreenConvertRequest,
   type OffscreenConvertResponse,
+  type OffscreenCropRequest,
+  type OffscreenCropResponse,
 } from './offscreen-protocol';
 
 const OFFSCREEN_PAGE = 'offscreen.html';
@@ -68,10 +71,10 @@ async function sendConvertRequest(
   return response;
 }
 
-async function withTimeout<T>(task: Promise<T>, timeoutMs: number): Promise<T> {
+async function withTimeout<T>(task: Promise<T>, timeoutMs: number, label = '操作'): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error('HTML 转 Markdown 超时')), timeoutMs);
+    timer = setTimeout(() => reject(new Error(`${label}超时`)), timeoutMs);
   });
   try {
     return await Promise.race([task, timeout]);
@@ -115,4 +118,36 @@ export async function htmlToMarkdown(html: string, url?: string): Promise<string
 /** Readability 读取模式；正文识别失败返回 null。 */
 export async function articleToMarkdown(html: string, url: string): Promise<string | null> {
   return convert(html, url, true);
+}
+
+async function sendCropRequest(request: OffscreenCropRequest): Promise<OffscreenCropResponse> {
+  const response = (await browser.runtime.sendMessage(request)) as
+    | OffscreenCropResponse
+    | undefined;
+  if (!response) throw new Error('离屏文档没有返回截图');
+  return response;
+}
+
+/** 在离屏文档里按像素矩形裁剪截图，返回 JPEG data URL。 */
+export async function cropScreenshot(
+  dataUrl: string,
+  crop: { x: number; y: number; width: number; height: number },
+  quality = 0.8,
+): Promise<string> {
+  await ensureOffscreenDocument();
+  const request: OffscreenCropRequest = { type: OFFSCREEN_CROP_MESSAGE, dataUrl, crop, quality };
+
+  let response: OffscreenCropResponse;
+  try {
+    response = await withTimeout(sendCropRequest(request), CONVERT_TIMEOUT_MS, '截图裁剪');
+  } catch (error) {
+    if (!/Receiving end does not exist|Could not establish connection/i.test(String(error))) {
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    response = await withTimeout(sendCropRequest(request), CONVERT_TIMEOUT_MS, '截图裁剪');
+  }
+
+  if (!response.ok) throw new Error(response.error);
+  return response.dataUrl;
 }

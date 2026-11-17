@@ -62,6 +62,7 @@ export function SettingsSheet({ open, config, onClose, onSave, onListModels }: S
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [supportsImages, setSupportsImages] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
@@ -75,6 +76,7 @@ export function SettingsSheet({ open, config, onClose, onSave, onListModels }: S
     setBaseUrl(config?.baseUrl ?? preset.baseUrl);
     setModelId(config?.modelId ?? preset.modelId);
     setApiKey(config?.apiKey ?? '');
+    setSupportsImages(config?.supportsImages === true);
     setShowKey(false);
     setError(null);
     setModels([]);
@@ -149,6 +151,7 @@ export function SettingsSheet({ open, config, onClose, onSave, onListModels }: S
       baseUrl: normalizeBaseUrl(baseUrl),
       modelId: modelId.trim(),
       apiKey: apiKey.trim(),
+      supportsImages,
     });
   }
 
@@ -293,6 +296,21 @@ export function SettingsSheet({ open, config, onClose, onSave, onListModels }: S
               </SelectContent>
             </Select>
           </Field>
+
+          <label className="flex items-start gap-2 rounded-xl border border-line bg-app px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={supportsImages}
+              onChange={(event) => setSupportsImages(event.target.checked)}
+              className="mt-0.5 size-3.5 flex-shrink-0 accent-brand"
+            />
+            <span>
+              <span className="block text-[11px] font-semibold text-ink">该模型支持图片输入</span>
+              <span className="mt-0.5 block text-[9.5px] leading-relaxed text-ink-soft">
+                开启后才能把截图发给模型。不确定就关闭，避免端点拒绝带图片的请求。
+              </span>
+            </span>
+          </label>
 
           <div className="flex items-start gap-2 rounded-xl bg-app px-3 py-2.5 text-[10px] leading-relaxed text-ink-soft">
             <ShieldCheck size={14} className="mt-0.5 flex-shrink-0 text-success" />

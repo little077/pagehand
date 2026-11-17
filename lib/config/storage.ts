@@ -10,7 +10,8 @@ function isProviderConfig(value: unknown): value is ProviderConfig {
     typeof record.presetId === 'string' &&
     typeof record.baseUrl === 'string' &&
     typeof record.modelId === 'string' &&
-    typeof record.apiKey === 'string'
+    typeof record.apiKey === 'string' &&
+    (record.supportsImages === undefined || typeof record.supportsImages === 'boolean')
   );
 }
 
@@ -26,6 +27,7 @@ export async function saveConfig(config: ProviderConfig): Promise<ProviderConfig
     baseUrl: config.baseUrl.trim().replace(/\/+$/, ''),
     modelId: config.modelId.trim(),
     apiKey: config.apiKey.trim(),
+    supportsImages: config.supportsImages === true,
   };
   await browser.storage.local.set({ [CONFIG_STORAGE_KEY]: normalized });
   return normalized;

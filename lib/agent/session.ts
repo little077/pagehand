@@ -28,6 +28,8 @@ import {
 } from '@/lib/sessions/store';
 import { ALLOWED_TOOL_NAMES, PAGEHAND_TOOLS } from '@/lib/tools';
 import { bindInteractionBridge } from '@/lib/tools/bridge';
+import { setImageSupport } from '@/lib/tools/runtime';
+import { extractToolImages } from '@/lib/tools/tool-images';
 import { InteractionBridge, type InteractionRequest, type InteractionStatus } from './interactions';
 import { RuntimeKeepAlive } from './keepalive';
 import { toPiModel } from './model';
@@ -117,6 +119,7 @@ export class AgentSession {
   applyConfig(config: ProviderConfig): void {
     const changed = JSON.stringify(this.config) !== JSON.stringify(config);
     this.config = config;
+    setImageSupport(config.supportsImages === true);
     if (changed) {
       this.agent = null;
     }
@@ -361,6 +364,7 @@ export class AgentSession {
     if (!this.config) throw new Error('缺少模型配置');
 
     const config = this.config;
+    setImageSupport(config.supportsImages === true);
     const agent = new Agent({
       initialState: {
         systemPrompt: SYSTEM_PROMPT,
@@ -432,7 +436,10 @@ export class AgentSession {
         const message = event.message;
         const text = assistantText(message);
         const failed = message.stopReason === 'error';
-        const error = failed ? (message.errorMessage ?? '模型请求失败') : undefined;
+        let error = failed ? (message.errorMessage ?? '模型请求失败') : undefined;
+        if (failed && this.lastToolWasScreenshot()) {
+          error = `${error}\n\n如果当前端点不接受图片，请在设置里关闭「该模型支持图片输入」或换一个支持视觉的模型。`;
+        }
 
         const item = this.findItem(id);
         if (item?.kind === 'assistant') {
@@ -479,6 +486,7 @@ export class AgentSession {
           item.status = event.isError ? 'error' : 'ok';
           item.summary = summary;
           item.details = (event.result as { details?: unknown } | null)?.details;
+          item.images = extractToolImages(event.result);
           item.durationMs = durationMs;
           this.emit({
             type: 'tool_end',
@@ -487,6 +495,7 @@ export class AgentSession {
             ok: !event.isError,
             summary,
             details: item.details,
+            images: item.images,
             durationMs,
           });
         }
@@ -553,6 +562,16 @@ export class AgentSession {
     return undefined;
   }
 
+  private lastToolWasScreenshot(): boolean {
+    for (let index = this.items.length - 1; index >= 0; index -= 1) {
+      const item = this.items[index];
+      if (item?.kind === 'tool') {
+        return item.name === 'screenshot' && item.status === 'ok';
+      }
+    }
+    return false;
+  }
+
   private describeToolResult(name: string, result: unknown, isError: boolean): string {
     if (isError) {
       return firstContentText(result).slice(0, 200) || `${name} 执行失败`;
@@ -594,6 +613,15 @@ export class AgentSession {
       if (hidden > 0) parts.push(`${hidden} 个不可见`);
       if (covered > 0) parts.push(`${covered} 个被遮挡`);
       return parts.join(' · ');
+    }
+    if (name === 'screenshot' && details) {
+      const width = typeof details.image_width === 'number' ? details.image_width : 0;
+      const height = typeof details.image_height === 'number' ? details.image_height : 0;
+      const source = details.source === 'element' ? 'element' : 'viewport';
+      const selector = typeof details.selector === 'string' ? details.selector : '';
+      return source === 'element' && selector
+        ? `已截图元素「${selector}」 · ${width}×${height}`
+        : `已截图当前视口 · ${width}×${height}`;
     }
     if (name === 'ask_user' && details) {
       const answers = details.answers as Record<string, unknown> | undefined;

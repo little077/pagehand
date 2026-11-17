@@ -7,7 +7,6 @@ import { AssistantBubble } from './AssistantBubble';
 interface MessageListProps {
   items: ChatItem[];
   busy: boolean;
-  onStop: () => void;
 }
 
 function UserBubble({ item }: { item: UserItem }) {
@@ -20,7 +19,7 @@ function UserBubble({ item }: { item: UserItem }) {
   );
 }
 
-export function MessageList({ items, busy, onStop }: MessageListProps) {
+export function MessageList({ items, busy }: MessageListProps) {
   const endRef = useRef<HTMLDivElement>(null);
   const blocks = useMemo(() => groupConversation(items, { busy }), [items, busy]);
 
@@ -42,7 +41,7 @@ export function MessageList({ items, busy, onStop }: MessageListProps) {
         if (run.tools.length === 0) {
           const waiting = run.status === 'running' && !run.answer && run.notes.length === 0;
           if (waiting) {
-            return <AgentRun key={run.id} run={run} onStop={onStop} />;
+            return <AgentRun key={run.id} run={run} />;
           }
           return (
             <div key={run.id} className="space-y-3">
@@ -56,7 +55,7 @@ export function MessageList({ items, busy, onStop }: MessageListProps) {
 
         return (
           <div key={run.id} className="space-y-3">
-            <AgentRun run={run} onStop={onStop} />
+            <AgentRun run={run} />
             {run.answer && <AssistantBubble item={run.answer} />}
           </div>
         );

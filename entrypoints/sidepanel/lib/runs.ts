@@ -30,6 +30,7 @@ export const TOOL_LABELS: Record<string, string> = {
   read_tab: '读取指定标签页',
   read_selection: '读取选中文本',
   inspect: '检查页面元素',
+  screenshot: '截图',
   ask_user: '向你提问',
 };
 
