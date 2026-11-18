@@ -25,6 +25,7 @@ const TOOL_ICONS: Record<string, typeof FileText> = {
   read_selection: TextSelect,
   inspect: MousePointerClick,
   screenshot: Camera,
+  pdf: FileText,
   ask_user: MessageCircleQuestion,
 };
 

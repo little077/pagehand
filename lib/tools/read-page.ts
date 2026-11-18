@@ -1,5 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from 'typebox';
+import { pdfRedirectMessage } from '@/lib/page/pdf-detect';
 import {
   READ_MODE_LABEL,
   type ReadErrorCode,
@@ -23,7 +24,8 @@ export type ReadToolDetails =
       frameCount: number;
       tabId?: number;
     }
-  | { error: string; code: ReadErrorCode | 'unknown'; tabId?: number };
+  | { error: string; code: ReadErrorCode | 'unknown'; tabId?: number }
+  | { route: 'pdf'; message: string; tabId?: number };
 
 const parameters = Type.Object({ ...readExtractionParameters });
 
@@ -37,7 +39,7 @@ export const readPageTool: AgentTool<typeof parameters, ReadToolDetails> = {
     '可以用 selector 只读某一块，用 frame_id 读页面里的子框架。' +
     '如果用户指的是浏览器里的另一个标签页（“另一个页面 / 后台那个 / 我刚才开的 / 我开着的其他页面”），不要用这个工具：' +
     '先调用 list_tabs 找到 tab_id，再用 read_tab。' +
-    '只读，不点击、不提交、不修改页面。不要读 chrome:// 或扩展商店，也不要指望它读 PDF。',
+    '只读，不点击、不提交、不修改页面。不要读 chrome:// 或扩展商店；PDF 请改用 pdf 工具。',
   parameters,
   replay: 'safe',
   async execute(_toolCallId, params, signal) {
@@ -71,6 +73,13 @@ export const readPageTool: AgentTool<typeof parameters, ReadToolDetails> = {
         },
       };
     } catch (error) {
+      if (readErrorCode(error) === 'pdf') {
+        const message = pdfRedirectMessage();
+        return {
+          content: [{ type: 'text', text: message }],
+          details: { route: 'pdf', message },
+        };
+      }
       return {
         isError: true,
         content: [{ type: 'text', text: readErrorMessage(error) }],

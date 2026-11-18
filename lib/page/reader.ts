@@ -2,6 +2,9 @@
 
 import { type Browser, browser } from 'wxt/browser';
 import { articleToMarkdown, htmlToMarkdown } from './offscreen';
+import { isPdfUrl } from './pdf-detect';
+
+export { isPdfUrl };
 
 export const READ_DEFAULT_MAX_CHARS = 12_000;
 export const READ_MIN_MAX_CHARS = 1_000;
@@ -262,10 +265,6 @@ function assertReadableUrl(url: string | undefined): string {
   return url;
 }
 
-export function isPdfUrl(url: string): boolean {
-  return /\.pdf($|[?#])/i.test(url);
-}
-
 export function normalizeSelector(raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined) return null;
   let selector = raw.trim();
@@ -436,7 +435,7 @@ export async function readPage(request: ReadRequest): Promise<ReadOutcome> {
   if (isPdfUrl(url)) {
     throw new PageReadError(
       'pdf',
-      '这是一个 PDF 文件。Pagehand 当前版本还不能读取 PDF 正文，请直接告诉用户这个限制，不要反复重试。',
+      '这是一个 PDF 文件，read_page 只能读 HTML 页面。请使用 pdf 工具读取正文。',
     );
   }
 

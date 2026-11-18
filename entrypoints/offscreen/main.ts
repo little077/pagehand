@@ -3,11 +3,15 @@ import { articleToMarkdown, htmlToMarkdown } from '@/lib/page/markdown';
 import {
   isConvertRequest,
   isCropRequest,
+  isPdfInfoRequest,
+  isPdfReadRequest,
+  isPdfSearchRequest,
   type OffscreenConvertRequest,
   type OffscreenConvertResponse,
   type OffscreenCropRequest,
   type OffscreenCropResponse,
 } from '@/lib/page/offscreen-protocol';
+import { handlePdfInfo, handlePdfRead, handlePdfSearch, pdfErrorMessage } from './pdf';
 
 function convert(request: OffscreenConvertRequest): OffscreenConvertResponse {
   if (request.article) {
@@ -67,6 +71,31 @@ browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch((error: unknown) => {
         sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) });
       });
+    return true;
+  }
+
+  if (isPdfInfoRequest(message)) {
+    handlePdfInfo(message.url)
+      .then((info) => sendResponse({ ok: true, info }))
+      .catch((error: unknown) => sendResponse({ ok: false, error: pdfErrorMessage(error) }));
+    return true;
+  }
+
+  if (isPdfReadRequest(message)) {
+    handlePdfRead(message.url, message.pageRange, message.maxChars)
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error: unknown) => sendResponse({ ok: false, error: pdfErrorMessage(error) }));
+    return true;
+  }
+
+  if (isPdfSearchRequest(message)) {
+    handlePdfSearch(message.url, message.query, message.pageRange, {
+      regex: message.regex,
+      caseInsensitive: message.caseInsensitive,
+      maxHits: message.maxHits,
+    })
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error: unknown) => sendResponse({ ok: false, error: pdfErrorMessage(error) }));
     return true;
   }
 

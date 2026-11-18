@@ -1,5 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from 'typebox';
+import { pdfRedirectMessage } from '@/lib/page/pdf-detect';
 import { READ_MODE_LABEL, readErrorCode, readErrorMessage, readPage } from '@/lib/page/reader';
 import { formatReadResultForModel } from './format';
 import type { ReadToolDetails } from './read-page';
@@ -59,6 +60,17 @@ export const readTabTool: AgentTool<typeof parameters, ReadToolDetails> = {
         },
       };
     } catch (error) {
+      if (readErrorCode(error) === 'pdf') {
+        const message = pdfRedirectMessage(params.tab_id);
+        return {
+          content: [{ type: 'text', text: message }],
+          details: {
+            route: 'pdf',
+            message,
+            ...(params.tab_id !== undefined ? { tabId: params.tab_id } : {}),
+          },
+        };
+      }
       return {
         isError: true,
         content: [{ type: 'text', text: readErrorMessage(error) }],

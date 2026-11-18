@@ -2,14 +2,27 @@ import { browser } from 'wxt/browser';
 import {
   OFFSCREEN_CONVERT_MESSAGE,
   OFFSCREEN_CROP_MESSAGE,
+  OFFSCREEN_PDF_INFO_MESSAGE,
+  OFFSCREEN_PDF_READ_MESSAGE,
+  OFFSCREEN_PDF_SEARCH_MESSAGE,
   type OffscreenConvertRequest,
   type OffscreenConvertResponse,
   type OffscreenCropRequest,
   type OffscreenCropResponse,
+  type OffscreenPdfInfoRequest,
+  type OffscreenPdfInfoResponse,
+  type OffscreenPdfReadRequest,
+  type OffscreenPdfReadResponse,
+  type OffscreenPdfSearchRequest,
+  type OffscreenPdfSearchResponse,
+  type PdfInfoData,
+  type PdfReadData,
+  type PdfSearchData,
 } from './offscreen-protocol';
 
 const OFFSCREEN_PAGE = 'offscreen.html';
 const CONVERT_TIMEOUT_MS = 20_000;
+const PDF_TIMEOUT_MS = 45_000;
 
 interface OffscreenApi {
   createDocument(options: { url: string; reasons: string[]; justification: string }): Promise<void>;
@@ -169,4 +182,70 @@ export async function cropScreenshot(
 ): Promise<string> {
   const result = await transformScreenshot(dataUrl, crop, quality);
   return result.dataUrl;
+}
+
+type PdfRequest = OffscreenPdfInfoRequest | OffscreenPdfReadRequest | OffscreenPdfSearchRequest;
+
+async function sendPdfRequest<T>(request: PdfRequest): Promise<T> {
+  await ensureOffscreenDocument();
+  const send = async (): Promise<T> => {
+    const response = (await browser.runtime.sendMessage(request)) as T | undefined;
+    if (!response) throw new Error('离屏文档没有返回 PDF 结果');
+    return response;
+  };
+
+  try {
+    return await withTimeout(send(), PDF_TIMEOUT_MS, 'PDF 处理');
+  } catch (error) {
+    if (!/Receiving end does not exist|Could not establish connection/i.test(String(error))) {
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    return withTimeout(send(), PDF_TIMEOUT_MS, 'PDF 处理');
+  }
+}
+
+export async function getPdfInfo(url: string): Promise<PdfInfoData> {
+  const response = await sendPdfRequest<OffscreenPdfInfoResponse>({
+    type: OFFSCREEN_PDF_INFO_MESSAGE,
+    url,
+  });
+  if (!response.ok) throw new Error(response.error);
+  return response.info;
+}
+
+export async function getPdfText(
+  url: string,
+  pageRange?: string,
+  maxChars?: number,
+): Promise<PdfReadData> {
+  const response = await sendPdfRequest<OffscreenPdfReadResponse>({
+    type: OFFSCREEN_PDF_READ_MESSAGE,
+    url,
+    ...(pageRange ? { pageRange } : {}),
+    ...(maxChars !== undefined ? { maxChars } : {}),
+  });
+  if (!response.ok) throw new Error(response.error);
+  return response.result;
+}
+
+export async function searchPdf(options: {
+  url: string;
+  query: string;
+  pageRange?: string;
+  regex?: boolean;
+  caseInsensitive?: boolean;
+  maxHits?: number;
+}): Promise<PdfSearchData> {
+  const response = await sendPdfRequest<OffscreenPdfSearchResponse>({
+    type: OFFSCREEN_PDF_SEARCH_MESSAGE,
+    url: options.url,
+    query: options.query,
+    ...(options.pageRange ? { pageRange: options.pageRange } : {}),
+    ...(options.regex !== undefined ? { regex: options.regex } : {}),
+    ...(options.caseInsensitive !== undefined ? { caseInsensitive: options.caseInsensitive } : {}),
+    ...(options.maxHits !== undefined ? { maxHits: options.maxHits } : {}),
+  });
+  if (!response.ok) throw new Error(response.error);
+  return response.result;
 }
