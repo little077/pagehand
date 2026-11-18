@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { InteractionBridge } from '@/lib/agent/interactions';
-import { askUserTool } from '@/lib/tools/ask-user';
+import { askUserTool, validateAskQuestions } from '@/lib/tools/ask-user';
 import { bindInteractionBridge } from '@/lib/tools/bridge';
 
 const questions = [
@@ -69,5 +69,36 @@ describe('ask_user', () => {
     expect(askUserTool.replay).toBe('never');
     expect(askUserTool.name).toBe('ask_user');
     expect(askUserTool.description).toContain('不要用它的场景');
+  });
+});
+
+describe('ask_user 语义校验', () => {
+  it('接受合法的问题结构', () => {
+    expect(validateAskQuestions(questions)).toBeNull();
+  });
+
+  it('拒绝空 id、重复 id、空问题和空选项', () => {
+    expect(validateAskQuestions([{ id: ' ', question: '问题' }])).toContain('非空 id');
+    expect(
+      validateAskQuestions([
+        { id: 'same', question: '问题一' },
+        { id: 'same', question: '问题二' },
+      ]),
+    ).toContain('id 重复');
+    expect(validateAskQuestions([{ id: 'a', question: ' ' }])).toContain('文案不能为空');
+    expect(
+      validateAskQuestions([{ id: 'a', question: '问题', options: [{ label: ' ' }] }]),
+    ).toContain('空的选项文字');
+  });
+
+  it('拒绝超过 3 个问题', () => {
+    expect(
+      validateAskQuestions([
+        { id: 'a', question: '一' },
+        { id: 'b', question: '二' },
+        { id: 'c', question: '三' },
+        { id: 'd', question: '四' },
+      ]),
+    ).toContain('最多 3 个');
   });
 });

@@ -42,6 +42,31 @@ const parameters = Type.Object({
 
 type AskUserDetails = { answers: Record<string, string> } | { status: InteractionStatus };
 
+/** schema 之外再做一层语义检查：空 id、重复 id、空问题/空选项都不是合法的提问。 */
+export function validateAskQuestions(questions: AskQuestion[]): string | null {
+  if (questions.length === 0) return 'ask_user 至少需要 1 个问题。';
+  if (questions.length > 3) return 'ask_user 一次最多 3 个问题。';
+
+  const ids = new Set<string>();
+  for (const question of questions) {
+    const id = question.id.trim();
+    if (!id) return 'ask_user 的每个问题都必须有非空 id。';
+    if (ids.has(id)) return `ask_user 的问题 id 重复：${id}。`;
+    ids.add(id);
+
+    if (!question.question.trim()) return `ask_user 的问题「${id}」文案不能为空。`;
+    if (question.options) {
+      if (question.options.length === 0 || question.options.length > 4) {
+        return `ask_user 的问题「${id}」选项数量必须是 1～4 个。`;
+      }
+      if (question.options.some((option) => !option.label.trim())) {
+        return `ask_user 的问题「${id}」不能有空的选项文字。`;
+      }
+    }
+  }
+  return null;
+}
+
 const UNANSWERED_TEXT: Record<Exclude<InteractionStatus, 'answered'>, string> = {
   denied: '用户拒绝回答这个问题。',
   dismissed: '用户没有回答这个问题，直接发了新消息。',
@@ -58,6 +83,8 @@ export const askUserTool: AgentTool<typeof parameters, AskUserDetails> = {
   async execute(toolCallId, params, signal) {
     const bridge = requireInteractionBridge();
     const questions = params.questions as AskQuestion[];
+    const invalid = validateAskQuestions(questions);
+    if (invalid) throw new Error(invalid);
 
     const answer = await bridge.request(
       {

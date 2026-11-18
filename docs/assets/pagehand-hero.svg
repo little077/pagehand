@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-label="浏览器侧边栏 Agent 插图：一只手套从右侧面板伸出，点向网页上的按钮">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0v40" fill="none" stroke="#E3DFD4" stroke-width="1" />
+    </pattern>
+    <clipPath id="winClip">
+      <rect x="120" y="150" width="980" height="600" rx="26" />
+    </clipPath>
+    <clipPath id="panelClip">
+      <rect x="1150" y="150" width="330" height="600" rx="26" />
+    </clipPath>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="1600" height="900" fill="#F7F5F0" />
+  <rect width="1600" height="900" fill="url(#grid)" opacity="0.5" />
+  <circle cx="1500" cy="120" r="180" fill="#E6E1F3" opacity="0.55" />
+  <circle cx="90" cy="800" r="150" fill="#DCEAE6" opacity="0.6" />
+
+  <!-- 浏览器窗口 -->
+  <g>
+    <rect x="120" y="150" width="980" height="600" rx="26" fill="#FFFFFF" stroke="#DAD6CC" stroke-width="3" />
+    <g clip-path="url(#winClip)">
+      <rect x="120" y="150" width="980" height="66" fill="#EFEBE2" />
+    </g>
+    <circle cx="168" cy="183" r="10" fill="#D8635A" />
+    <circle cx="200" cy="183" r="10" fill="#E9A23B" />
+    <circle cx="232" cy="183" r="10" fill="#5BAF6C" />
+    <rect x="268" y="167" width="700" height="32" rx="16" fill="#FFFFFF" stroke="#DAD6CC" stroke-width="2" />
+    <rect x="288" y="178" width="220" height="10" rx="5" fill="#D3CEC2" />
+    <rect x="1000" y="167" width="52" height="32" rx="12" fill="#FFFFFF" stroke="#DAD6CC" stroke-width="2" />
+
+    <!-- 页面内容：标题条 -->
+    <rect x="176" y="256" width="330" height="26" rx="13" fill="#3C3A45" />
+    <rect x="176" y="300" width="560" height="14" rx="7" fill="#D3CEC2" />
+    <rect x="176" y="328" width="470" height="14" rx="7" fill="#D3CEC2" />
+
+    <!-- 页面内容：图片占位 + 卡片 -->
+    <rect x="176" y="376" width="260" height="180" rx="16" fill="#EDE9E0" stroke="#DAD6CC" stroke-width="2" />
+    <circle cx="238" cy="428" r="20" fill="#C9C2B4" />
+    <path d="M192 532l66-70 54 54 40-34 62 50" fill="none" stroke="#C9C2B4" stroke-width="10" stroke-linejoin="round" />
+
+    <g>
+      <rect x="470" y="376" width="300" height="80" rx="14" fill="#F4F1EA" stroke="#DAD6CC" stroke-width="2" />
+      <rect x="494" y="400" width="180" height="12" rx="6" fill="#C9C2B4" />
+      <rect x="494" y="424" width="120" height="12" rx="6" fill="#D9D4C8" />
+      <rect x="470" y="476" width="300" height="80" rx="14" fill="#F4F1EA" stroke="#DAD6CC" stroke-width="2" />
+      <rect x="494" y="500" width="150" height="12" rx="6" fill="#C9C2B4" />
+      <rect x="494" y="524" width="200" height="12" rx="6" fill="#D9D4C8" />
+    </g>
+
+    <!-- 侧栏表单区 -->
+    <rect x="800" y="256" width="240" height="300" rx="16" fill="#FAF8F3" stroke="#E3DFD4" stroke-width="2" />
+    <rect x="824" y="284" width="120" height="12" rx="6" fill="#C9C2B4" />
+    <rect x="824" y="310" width="192" height="30" rx="8" fill="#FFFFFF" stroke="#DAD6CC" stroke-width="2" />
+    <rect x="824" y="360" width="90" height="12" rx="6" fill="#C9C2B4" />
+    <rect x="824" y="386" width="192" height="30" rx="8" fill="#FFFFFF" stroke="#DAD6CC" stroke-width="2" />
+
+    <!-- 被 Agent 瞄准的按钮 -->
+    <rect x="736" y="470" width="216" height="70" rx="18" fill="none" stroke="#2E8B84" stroke-width="3" stroke-dasharray="10 9" />
+    <rect x="760" y="506" width="180" height="46" rx="14" fill="#E9A23B" />
+    <rect x="788" y="524" width="124" height="10" rx="5" fill="#FFF6E4" />
+  </g>
+
+  <!-- 运动轨迹 -->
+  <path d="M1130 470C1060 452 1010 470 968 512" fill="none" stroke="#4F46A9" stroke-width="4" stroke-dasharray="12 12" stroke-linecap="round" opacity="0.7" />
+  <path d="M968 512l-6-24 26 4z" fill="#4F46A9" opacity="0.85" />
+
+  <!-- 侧边栏面板 -->
+  <g>
+    <rect x="1150" y="150" width="330" height="600" rx="26" fill="#4F46A9" />
+    <g clip-path="url(#panelClip)">
+      <rect x="1150" y="150" width="330" height="76" fill="#42399A" />
+    </g>
+    <circle cx="1194" cy="190" r="20" fill="#E9A23B" />
+    <rect x="1230" y="176" width="140" height="14" rx="7" fill="#CFC8F0" />
+    <rect x="1230" y="200" width="90" height="10" rx="5" fill="#9A91D0" />
+
+    <!-- 对话气泡 -->
+    <rect x="1244" y="256" width="200" height="58" rx="18" fill="#6B62C4" />
+    <rect x="1268" y="276" width="152" height="10" rx="5" fill="#CFC8F0" />
+    <rect x="1268" y="294" width="104" height="10" rx="5" fill="#A79EDA" />
+
+    <rect x="1186" y="336" width="230" height="86" rx="18" fill="#F1EFFA" />
+    <rect x="1210" y="358" width="184" height="10" rx="5" fill="#9A91D0" />
+    <rect x="1210" y="380" width="150" height="10" rx="5" fill="#B7AFDF" />
+    <rect x="1210" y="402" width="112" height="10" rx="5" fill="#B7AFDF" />
+
+    <!-- 步骤条 -->
+    <rect x="1186" y="446" width="230" height="40" rx="12" fill="#3E3591" />
+    <circle cx="1212" cy="466" r="8" fill="#5BAF6C" />
+    <rect x="1232" y="460" width="140" height="12" rx="6" fill="#8A81C8" />
+
+    <!-- 输入框 -->
+    <rect x="1186" y="668" width="258" height="52" rx="16" fill="#F1EFFA" />
+    <rect x="1210" y="688" width="130" height="12" rx="6" fill="#B7AFDF" />
+    <circle cx="1418" cy="694" r="16" fill="#2E8B84" />
+  </g>
+
+  <!-- 伸出手套（自面板向左） -->
+  <g transform="translate(1090 470)">
+    <!-- 袖口 -->
+    <rect x="96" y="-54" width="104" height="108" rx="24" fill="#2E8B84" />
+    <circle cx="148" cy="0" r="11" fill="#E9A23B" />
+    <!-- 掌 -->
+    <rect x="-20" y="-60" width="122" height="120" rx="40" fill="#8E86D6" stroke="#47408F" stroke-width="4" />
+    <!-- 四指 -->
+    <rect x="-112" y="-56" width="96" height="24" rx="12" fill="#A79EDA" stroke="#47408F" stroke-width="4" />
+    <rect x="-150" y="-26" width="134" height="24" rx="12" fill="#A79EDA" stroke="#47408F" stroke-width="4" />
+    <rect x="-120" y="4" width="104" height="24" rx="12" fill="#A79EDA" stroke="#47408F" stroke-width="4" />
+    <rect x="-104" y="34" width="88" height="24" rx="12" fill="#A79EDA" stroke="#47408F" stroke-width="4" />
+    <!-- 拇指 -->
+    <rect x="-26" y="30" width="72" height="26" rx="13" transform="rotate(38 -26 30)" fill="#8E86D6" stroke="#47408F" stroke-width="4" />
+    <!-- 关节 -->
+    <circle cx="66" cy="-42" r="5" fill="#47408F" />
+    <circle cx="66" cy="-14" r="5" fill="#47408F" />
+    <circle cx="66" cy="14" r="5" fill="#47408F" />
+    <circle cx="66" cy="42" r="5" fill="#47408F" />
+  </g>
+
+  <!-- 本地优先徽标：盾牌 + 锁 -->
+  <g transform="translate(1108 214)">
+    <path d="M0-46 40-32v34c0 26-18 42-40 52-22-10-40-26-40-52v-34z" fill="#F1EFFA" stroke="#2E8B84" stroke-width="4" stroke-linejoin="round" />
+    <rect x="-14" y="-4" width="28" height="22" rx="5" fill="#2E8B84" />
+    <path d="M-8-4v-8a8 8 0 0 1 16 0v8" fill="none" stroke="#2E8B84" stroke-width="4" />
+  </g>
+
+  <!-- 页面上的高亮扫描点 -->
+  <g opacity="0.8">
+    <circle cx="620" cy="612" r="12" fill="none" stroke="#4F46A9" stroke-width="3" />
+    <circle cx="620" cy="612" r="4" fill="#4F46A9" />
+    <circle cx="360" cy="640" r="8" fill="none" stroke="#4F46A9" stroke-width="3" opacity="0.6" />
+  </g>
+</svg>

@@ -51,6 +51,7 @@ export function PendingDeck({ items, onRespond }: PendingDeckProps) {
   return (
     <div className="absolute inset-x-0 bottom-0 z-30 max-h-[78vh] overflow-y-auto bg-app/95 px-3 pb-2.5 pt-3 backdrop-blur">
       <InteractionCard
+        key={head.toolCallId}
         item={head}
         queue={queue}
         onRespond={onRespond}
