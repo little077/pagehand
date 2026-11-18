@@ -1,9 +1,9 @@
 import type { ChatItem } from '@/lib/ipc/protocol';
 import { isSessionRecord, type SessionRecord } from './record';
 
+/** 附件按内容全局存一份；会话与附件的归属关系放在 sessionAttachments 关联表。 */
 export interface StoredAttachment {
   id: string;
-  sessionId: string;
   mimeType: string;
   size: number;
   data: string;
@@ -90,7 +90,6 @@ export async function dehydrateSession(record: SessionRecord): Promise<Dehydrate
     if (!attachments.has(id)) {
       attachments.set(id, {
         id,
-        sessionId: record.id,
         mimeType,
         size,
         data,
@@ -256,7 +255,6 @@ export function isStoredAttachment(value: unknown): value is StoredAttachment {
   return (
     isRecord(value) &&
     typeof value.id === 'string' &&
-    typeof value.sessionId === 'string' &&
     typeof value.mimeType === 'string' &&
     typeof value.size === 'number' &&
     typeof value.data === 'string' &&

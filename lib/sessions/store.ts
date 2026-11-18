@@ -8,11 +8,62 @@ import {
 } from './record';
 
 const DB_NAME = 'pagehand-sessions';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const SESSION_STORE = 'sessions';
 const ATTACHMENT_STORE = 'attachments';
 const META_STORE = 'sessionMeta';
+const LINK_STORE = 'sessionAttachments';
 const CURRENT_KEY = 'pagehand.sessions.current.v1';
+
+interface AttachmentLink {
+  key: string;
+  sessionId: string;
+  attachmentId: string;
+}
+
+function linkKey(sessionId: string, attachmentId: string): string {
+  return `${sessionId}::${attachmentId}`;
+}
+
+function attachmentIdFromLinkKey(key: string): string | null {
+  const index = key.indexOf('::');
+  return index < 0 ? null : key.slice(index + 2);
+}
+
+function isAttachmentLink(value: unknown): value is AttachmentLink {
+  if (!value || typeof value !== 'object') return false;
+  const link = value as Record<string, unknown>;
+  return (
+    typeof link.key === 'string' &&
+    typeof link.sessionId === 'string' &&
+    typeof link.attachmentId === 'string'
+  );
+}
+
+/** 递归找出会话记录里所有 attachmentId；升级到 v3 时用它补关联表。 */
+function collectAttachmentIds(value: unknown, out = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) {
+    for (const item of value) collectAttachmentIds(item, out);
+    return out;
+  }
+  if (!value || typeof value !== 'object') return out;
+  const record = value as Record<string, unknown>;
+  if (typeof record.attachmentId === 'string') out.add(record.attachmentId);
+  for (const item of Object.values(record)) collectAttachmentIds(item, out);
+  return out;
+}
+
+/** 关联表删完后，只有没有任何会话再引用时才删附件本体。 */
+function deleteIfUnused(
+  attachments: IDBObjectStore,
+  links: IDBObjectStore,
+  attachmentId: string,
+): void {
+  const request = links.index('attachmentId').count(attachmentId);
+  request.onsuccess = () => {
+    if (request.result === 0) attachments.delete(attachmentId);
+  };
+}
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -27,11 +78,15 @@ function openDb(): Promise<IDBDatabase> {
         db.createObjectStore(SESSION_STORE, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(ATTACHMENT_STORE)) {
-        const store = db.createObjectStore(ATTACHMENT_STORE, { keyPath: 'id' });
-        store.createIndex('sessionId', 'sessionId');
+        db.createObjectStore(ATTACHMENT_STORE, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(META_STORE)) {
         db.createObjectStore(META_STORE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(LINK_STORE)) {
+        const links = db.createObjectStore(LINK_STORE, { keyPath: 'key' });
+        links.createIndex('sessionId', 'sessionId');
+        links.createIndex('attachmentId', 'attachmentId');
       }
       // v1 → v2：回填列表元数据；旧记录的图片仍是内联，读取时兼容。
       if (event.oldVersion < 2 && tx) {
@@ -43,6 +98,27 @@ function openDb(): Promise<IDBDatabase> {
           if (!cursor) return;
           const value = cursor.value;
           if (isSessionRecord(value)) meta.put(toSessionSummary(value));
+          cursor.continue();
+        };
+      }
+      // v2 → v3：附件不再只归一个 sessionId，按会话引用补一张关联表。
+      if (event.oldVersion < 3 && tx) {
+        const sessions = tx.objectStore(SESSION_STORE);
+        const links = tx.objectStore(LINK_STORE);
+        const cursorRequest = sessions.openCursor();
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result;
+          if (!cursor) return;
+          const value = cursor.value;
+          if (isSessionRecord(value)) {
+            for (const attachmentId of collectAttachmentIds(value)) {
+              links.put({
+                key: linkKey(value.id, attachmentId),
+                sessionId: value.id,
+                attachmentId,
+              } satisfies AttachmentLink);
+            }
+          }
           cursor.continue();
         };
       }
@@ -91,33 +167,55 @@ async function withStore<T>(
 
 async function attachmentsOf(sessionId: string): Promise<unknown[]> {
   const db = await openDb();
-  return toPromise(
+  const links = (await toPromise(
     db
-      .transaction(ATTACHMENT_STORE, 'readonly')
-      .objectStore(ATTACHMENT_STORE)
+      .transaction(LINK_STORE, 'readonly')
+      .objectStore(LINK_STORE)
       .index('sessionId')
       .getAll(sessionId),
-  );
+  )) as unknown[];
+  const ids = [...new Set(links.filter(isAttachmentLink).map((link) => link.attachmentId))];
+
+  const attachments: unknown[] = [];
+  for (const id of ids) {
+    const value = await withStore<unknown>(ATTACHMENT_STORE, 'readonly', (store) => store.get(id));
+    if (value !== undefined) attachments.push(value);
+  }
+  return attachments;
 }
 
 export async function writeSession(record: SessionRecord): Promise<void> {
   const { record: stored, attachments } = await dehydrateSession(record);
   const db = await openDb();
-  const tx = db.transaction([SESSION_STORE, ATTACHMENT_STORE, META_STORE], 'readwrite');
+  const tx = db.transaction([SESSION_STORE, ATTACHMENT_STORE, META_STORE, LINK_STORE], 'readwrite');
   const sessions = tx.objectStore(SESSION_STORE);
   const attachmentStore = tx.objectStore(ATTACHMENT_STORE);
   const meta = tx.objectStore(META_STORE);
+  const links = tx.objectStore(LINK_STORE);
 
   sessions.put(stored);
   meta.put(toSessionSummary(record));
   for (const attachment of attachments) attachmentStore.put(attachment);
 
-  // 删掉这个会话不再引用的附件，避免只增不减。
+  // 重建这条会话的引用；只有没有任何会话再引用的附件才删本体。
   const keep = new Set(attachments.map((attachment) => attachment.id));
-  const keysRequest = attachmentStore.index('sessionId').getAllKeys(record.id);
-  keysRequest.onsuccess = () => {
-    for (const key of keysRequest.result) {
-      if (!keep.has(String(key))) attachmentStore.delete(key);
+  const oldLinksRequest = links.index('sessionId').getAllKeys(record.id);
+  oldLinksRequest.onsuccess = () => {
+    const removed = new Set<string>();
+    for (const rawKey of oldLinksRequest.result) {
+      links.delete(rawKey);
+      const attachmentId = attachmentIdFromLinkKey(String(rawKey));
+      if (attachmentId && !keep.has(attachmentId)) removed.add(attachmentId);
+    }
+    for (const attachmentId of keep) {
+      links.put({
+        key: linkKey(record.id, attachmentId),
+        sessionId: record.id,
+        attachmentId,
+      } satisfies AttachmentLink);
+    }
+    for (const attachmentId of removed) {
+      deleteIfUnused(attachmentStore, links, attachmentId);
     }
   };
 
@@ -157,14 +255,23 @@ export async function listSessions(): Promise<SessionSummary[]> {
 
 export async function removeSession(id: string): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction([SESSION_STORE, ATTACHMENT_STORE, META_STORE], 'readwrite');
+  const tx = db.transaction([SESSION_STORE, ATTACHMENT_STORE, META_STORE, LINK_STORE], 'readwrite');
   tx.objectStore(SESSION_STORE).delete(id);
   tx.objectStore(META_STORE).delete(id);
 
   const attachmentStore = tx.objectStore(ATTACHMENT_STORE);
-  const keysRequest = attachmentStore.index('sessionId').getAllKeys(id);
+  const links = tx.objectStore(LINK_STORE);
+  const keysRequest = links.index('sessionId').getAllKeys(id);
   keysRequest.onsuccess = () => {
-    for (const key of keysRequest.result) attachmentStore.delete(key);
+    const removed = new Set<string>();
+    for (const rawKey of keysRequest.result) {
+      links.delete(rawKey);
+      const attachmentId = attachmentIdFromLinkKey(String(rawKey));
+      if (attachmentId) removed.add(attachmentId);
+    }
+    for (const attachmentId of removed) {
+      deleteIfUnused(attachmentStore, links, attachmentId);
+    }
   };
   await txDone(tx);
 

@@ -12,6 +12,8 @@
 - `inspect`：列出当前页面的可操作元素、可见性原因、遮挡情况与编号，支持 role/kind/input_type 筛选与重复调用护栏（v0.2 迭代，详见 `docs/iterations/v0.2-inspect.md` 与 `v0.2.1-inspect-search.md`）
 - `screenshot`：截当前可见画面或单个元素，支持模型图片能力开关（v0.3 迭代，详见 `docs/iterations/v0.3-screenshot.md`）
 - 输入框截屏附件：用户点「截屏」后在页面上拖动选择区域，作为消息附件发送；图库按内容去重写入 IndexedDB v2（v0.4 迭代，详见 `docs/iterations/v0.4-entry-b-plan.md`）
+- 输入框图片节点：粘贴 / 拖拽图片以自定义 Tiptap 节点插入，blob URL 即时预览、异步编码，悬停放大，随消息发送（v0.5 迭代，详见 `docs/iterations/v0.5-composer-images-plan.md`）
+- 附件归属：IndexedDB v3 增加会话 ↔ 附件关联表，同一张图可被多个会话引用，删除会话按引用计数清理
 - 单轮最多 8 个回合（`lib/agent/session.ts`），够跑「列标签 → 读多页 → 回答」
 - 运行块：工具调用按轮次收成可折叠过程卡，头部实时显示动作/步数/耗时，失败自动展开，运行中可停止（v0.3，详见 `docs/iterations/v0.3-run-ui.md`）
 - 会话落盘 + 多会话列表（本机 IndexedDB，标题三段式）

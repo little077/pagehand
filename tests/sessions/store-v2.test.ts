@@ -48,7 +48,28 @@ function record(id: string): SessionRecord {
   };
 }
 
-describe('IndexedDB v2', () => {
+async function counts(): Promise<{ attachments: number; links: number }> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open('pagehand-sessions');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  const tx = db.transaction(['attachments', 'sessionAttachments'], 'readonly');
+  const read = (name: string) =>
+    new Promise<number>((resolve, reject) => {
+      const request = tx.objectStore(name).count();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  const result = {
+    attachments: await read('attachments'),
+    links: await read('sessionAttachments'),
+  };
+  db.close();
+  return result;
+}
+
+describe('IndexedDB v3', () => {
   it('写入、列表、读取、删除都走 attachments + sessionMeta', async () => {
     const id = `session-${Date.now()}`;
     await store.writeSession(record(id));
@@ -89,5 +110,27 @@ describe('IndexedDB v2', () => {
     db.close();
     expect(count).toBe(1);
     await store.removeSession(id);
+  });
+
+  it('同一张图可被多个会话引用，删除其中一条不影响另一条', async () => {
+    const first = `session-${Date.now()}-first`;
+    const second = `session-${Date.now()}-second`;
+    await store.writeSession(record(first));
+    await store.writeSession(record(second));
+
+    expect(await counts()).toEqual({ attachments: 1, links: 2 });
+
+    const firstUser = (await store.readSession(first))?.items[0];
+    const secondUser = (await store.readSession(second))?.items[0];
+    expect(firstUser?.kind === 'user' ? firstUser.attachments?.[0]?.data : null).toBe(IMAGE);
+    expect(secondUser?.kind === 'user' ? secondUser.attachments?.[0]?.data : null).toBe(IMAGE);
+
+    await store.removeSession(first);
+    expect(await counts()).toEqual({ attachments: 1, links: 1 });
+    const survivor = (await store.readSession(second))?.items[0];
+    expect(survivor?.kind === 'user' ? survivor.attachments?.[0]?.data : null).toBe(IMAGE);
+
+    await store.removeSession(second);
+    expect(await counts()).toEqual({ attachments: 0, links: 0 });
   });
 });

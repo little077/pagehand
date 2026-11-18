@@ -201,3 +201,100 @@ textarea {
   pointer-events: none;
   color: var(--color-ink-faint);
 }
+
+/* 输入框内的图片节点：缩略图保持托盘时期的 86px 宽，底部标尺寸。 */
+.composer-editor .ProseMirror .ph-composer-image {
+  display: inline-flex;
+  vertical-align: bottom;
+  margin: 2px 4px 2px 0;
+}
+
+.ph-composer-image-card {
+  position: relative;
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+  background: var(--color-surface);
+}
+
+.ph-composer-image-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ph-composer-image-selected .ph-composer-image-card {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1px;
+}
+
+/* 悬停放大浮层：两层叠放，旧图淡出、新图淡入，在多张缩略图之间移动时不闪断。 */
+.ph-image-preview {
+  position: fixed;
+  z-index: 70;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--color-ink);
+  box-shadow: 0 18px 45px rgb(0 0 0 / 28%);
+}
+
+.ph-image-preview-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  will-change: opacity, transform;
+}
+
+.ph-image-preview-layer img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ph-image-preview-in {
+  animation: ph-preview-in 180ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.ph-image-preview-out {
+  animation: ph-preview-out 180ms ease-out both;
+}
+
+.ph-image-preview-closing {
+  animation: ph-preview-hide 160ms ease-out both;
+}
+
+@keyframes ph-preview-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+@keyframes ph-preview-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes ph-preview-hide {
+  to {
+    opacity: 0;
+    transform: scale(0.99);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ph-image-preview-in,
+  .ph-image-preview-out,
+  .ph-image-preview-closing {
+    animation: none;
+  }
+}
