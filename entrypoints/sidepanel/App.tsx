@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { type Browser, browser } from 'wxt/browser';
 import {
+  DEBUG_DEFAULT_ROUTE,
+  type DebugRoute,
+  debugHash,
+  parseDebugHash,
+} from '@/lib/debug/routes';
+import {
   type BgToUi,
   type CaptureResult,
   type ChatItem,
@@ -13,6 +19,8 @@ import {
 } from '@/lib/ipc/protocol';
 import type { SessionSummary } from '@/lib/sessions/record';
 import { Composer } from './components/Composer';
+import { DebugNotch } from './components/DebugNotch';
+import { DebugView } from './components/DebugView';
 import { Header } from './components/Header';
 import { Home } from './components/Home';
 import type { InteractionCardProps } from './components/InteractionCard';
@@ -57,6 +65,8 @@ export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [connectAttempt, setConnectAttempt] = useState(0);
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [debugRoute, setDebugRoute] = useState<DebugRoute>(DEBUG_DEFAULT_ROUTE);
 
   const portRef = useRef<Browser.runtime.Port | null>(null);
   const reconnectAttemptRef = useRef(0);
@@ -343,6 +353,25 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  useEffect(() => {
+    if (!(import.meta.env.DEV && import.meta.env.MODE === 'debug')) return;
+    const sync = () => {
+      const parsed = parseDebugHash(window.location.hash);
+      setDebugOpen(parsed.open);
+      setDebugRoute(parsed.route);
+    };
+    sync();
+    window.addEventListener('hashchange', sync);
+    return () => window.removeEventListener('hashchange', sync);
+  }, []);
+
+  function closeDebug() {
+    const { pathname, search } = window.location;
+    window.history.replaceState(null, '', `${pathname}${search}`);
+    setDebugOpen(false);
+    setDebugRoute(DEBUG_DEFAULT_ROUTE);
+  }
+
   function send(text: string, attachments: ImageAttachment[]) {
     if (!config) {
       setSettingsOpen(true);
@@ -417,6 +446,18 @@ export default function App() {
   const pendingInteractions = items.filter(
     (item): item is InteractionItem => item.kind === 'interaction' && item.status === 'pending',
   );
+  const debugEnabled = import.meta.env.DEV && import.meta.env.MODE === 'debug';
+
+  if (debugEnabled && debugOpen) {
+    return (
+      <DebugView
+        route={debugRoute}
+        onClose={closeDebug}
+        sessionId={sessionId}
+        itemCount={items.length}
+      />
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-app text-ink">
@@ -486,6 +527,14 @@ export default function App() {
         onDelete={deleteSession}
       />
       <Toast message={toast} onDismiss={() => setToast(null)} />
+
+      {debugEnabled && !debugOpen && (
+        <DebugNotch
+          onClick={() => {
+            window.location.hash = debugHash(DEBUG_DEFAULT_ROUTE.id);
+          }}
+        />
+      )}
     </div>
   );
 }

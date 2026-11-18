@@ -1,4 +1,5 @@
 import tailwindcss from '@tailwindcss/vite';
+import { loadEnv } from 'vite';
 import { defineConfig } from 'wxt';
 
 export default defineConfig({
@@ -13,7 +14,23 @@ export default defineConfig({
       default_title: '打开 Pagehand',
     },
   },
-  vite: () => ({
-    plugins: [tailwindcss()],
-  }),
+  vite: (env) => {
+    const debug = env.mode === 'debug' && env.command === 'serve';
+    const loaded = debug ? loadEnv(env.mode, process.cwd(), '') : {};
+    return {
+      plugins: [tailwindcss()],
+      define: {
+        __PAGEHAND_DEBUG_ENV__: JSON.stringify(
+          debug
+            ? {
+                baseUrl: loaded.VITE_DEBUG_MODEL_BASE_URL ?? '',
+                apiKey: loaded.VITE_DEBUG_MODEL_API_KEY ?? '',
+                modelId: loaded.VITE_DEBUG_MODEL_ID ?? '',
+                supportsImages: loaded.VITE_DEBUG_MODEL_SUPPORTS_IMAGES ?? '',
+              }
+            : null,
+        ),
+      },
+    };
+  },
 });

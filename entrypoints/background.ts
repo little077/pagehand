@@ -2,6 +2,7 @@ import { type Browser, browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { captureForComposer } from '@/lib/agent/capture';
 import { AgentSession } from '@/lib/agent/session';
+import { debugEnvConfig } from '@/lib/config/debug-env';
 import { fetchOpenAIModels } from '@/lib/config/models';
 import { loadConfig, saveConfig } from '@/lib/config/storage';
 import { type BgToUi, PORT_NAME, type UiToBg } from '@/lib/ipc/protocol';
@@ -19,9 +20,12 @@ export default defineBackground(() => {
     }
   });
 
+  const envConfig = debugEnvConfig();
   const configReady = loadConfig()
-    .then((config) => {
-      if (config) session.config = config;
+    .then((stored) => {
+      // Debug 模式下 ENV 三要素齐全时优先；否则回退到页面保存的配置。
+      const config = envConfig ?? stored;
+      if (config) session.applyConfig(config);
     })
     .catch((error: unknown) => {
       console.error('[pagehand] failed to load config', error);
