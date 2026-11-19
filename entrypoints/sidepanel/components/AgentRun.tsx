@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Files,
   FileText,
+  Hand,
   Loader2,
   MessageCircleQuestion,
   MousePointerClick,
@@ -25,6 +26,7 @@ const TOOL_ICONS: Record<string, typeof FileText> = {
   read_selection: TextSelect,
   inspect: MousePointerClick,
   screenshot: Camera,
+  interact: Hand,
   pdf: FileText,
   ask_user: MessageCircleQuestion,
 };

@@ -26,6 +26,27 @@ describe('htmlToMarkdown', () => {
     expect(markdown).toContain('| A | 100 |');
   });
 
+  it('strips inline base64 images so they do not eat the output budget', () => {
+    const markdown = htmlToMarkdown(
+      '<p>前</p><img src="data:image/png;base64,iVBORw0KGgo=" alt="封面" /><p>后</p>',
+      'https://example.com/post',
+    );
+    expect(markdown).toContain('前');
+    expect(markdown).toContain('后');
+    expect(markdown).toContain('图片：封面');
+    expect(markdown).not.toContain('data:image');
+    expect(markdown).not.toContain('base64');
+  });
+
+  it('同一路径优先使用带查询参数的完整链接', () => {
+    const markdown = htmlToMarkdown(
+      '<a href="/explore/abc">封面</a><a href="/explore/abc?xsec_token=token&xsec_source=pc_search">标题</a>',
+      'https://www.example.com/search',
+    );
+    expect(markdown).toContain('xsec_token=token');
+    expect(markdown).not.toContain('https://www.example.com/explore/abc)');
+  });
+
   it('drops scripts and styles instead of leaking their text', () => {
     const markdown = htmlToMarkdown(
       '<style>.a{color:red}</style><script>alert(1)</script><p>正文</p>',

@@ -28,9 +28,22 @@ describe('运行块头部文案', () => {
     expect(describeRun(run)).toBe('工具执行已停止 · 1 个');
   });
 
-  it('工具失败时指出第几步', () => {
-    const run = runOf([user('查一下'), tool(), tool('read_page', 'error'), assistant('失败了')]);
+  it('单步失败但最终有回答时，整体仍算完成', () => {
+    const run = runOf([
+      user('查一下'),
+      tool(),
+      tool('read_page', 'error'),
+      assistant('已经继续完成'),
+    ]);
     expect(firstFailedStep(run)).toBe(2);
+    expect(run.status).toBe('done');
+    expect(describeRun(run)).toBe('已执行 2 个工具 · 1 步失败但已继续');
+  });
+
+  it('工具失败且没有最终回答时，整体算失败', () => {
+    const run = runOf([user('查一下'), tool(), tool('read_page', 'error')]);
+    expect(firstFailedStep(run)).toBe(2);
+    expect(run.status).toBe('error');
     expect(describeRun(run)).toBe('工具执行失败 · 第 2 步');
   });
 

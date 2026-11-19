@@ -1,9 +1,20 @@
 import { Agent, type AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core';
 import type { AssistantMessage, TextContent } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
+import { debugModeEnabled } from '@/lib/debug/mode';
+import {
+  beginRun,
+  beginStep,
+  createDebugTrace,
+  finishRun,
+  finishStep,
+  setRunAnswer,
+} from '@/lib/debug/trace';
 import type {
   BgToUi,
   ChatItem,
+  DebugTrace,
+  DebugTraceRun,
   ImageAttachment,
   InteractionItem,
   ProviderConfig,
@@ -27,7 +38,7 @@ import {
   saveCurrentSessionId,
   writeSession,
 } from '@/lib/sessions/store';
-import { ALLOWED_TOOL_NAMES, PAGEHAND_TOOLS } from '@/lib/tools';
+import { ALLOWED_TOOL_NAMES, availableTools } from '@/lib/tools';
 import { bindInteractionBridge } from '@/lib/tools/bridge';
 import { setImageSupport } from '@/lib/tools/runtime';
 import { extractToolImages } from '@/lib/tools/tool-images';
@@ -37,7 +48,7 @@ import { toPiModel } from './model';
 import { evaluateToolGate } from './permission-gate';
 import { SYSTEM_PROMPT } from './prompt';
 
-const MAX_TURNS = 8;
+const MAX_TURNS = debugModeEnabled() ? 200 : 8;
 const MAX_TRACE = 100;
 const openAICompatibleStreams = openAICompletionsApi();
 
@@ -76,6 +87,7 @@ export class AgentSession {
   config: ProviderConfig | null = null;
   items: ChatItem[] = [];
   trace: TraceEntry[] = [];
+  debugTrace: DebugTrace | null = null;
   busy = false;
 
   private agent: Agent | null = null;
@@ -96,9 +108,11 @@ export class AgentSession {
   private readonly keepAlive = new RuntimeKeepAlive();
   private readonly emit: (message: BgToUi) => void;
   private readonly bridge: InteractionBridge;
+  private currentDebugRun: DebugTraceRun | null = null;
 
   constructor(emit: (message: BgToUi) => void) {
     this.emit = emit;
+    this.debugTrace = debugModeEnabled() ? createDebugTrace() : null;
     this.bridge = new InteractionBridge({
       open: (request) => this.openInteraction(request),
       settle: (id, status, values) => this.settleInteraction(id, status, values),
@@ -111,6 +125,7 @@ export class AgentSession {
       config: this.config,
       items: this.items,
       trace: this.trace,
+      debugTrace: this.debugTrace,
       busy: this.busy,
       sessionId: this.sessionId,
       title: this.title,
@@ -172,6 +187,7 @@ export class AgentSession {
     this.title = createSessionTitle();
     this.items = [];
     this.trace = [];
+    this.resetDebugTrace();
     this.turnCount = 0;
     this.seq = 0;
     this.streamingId = null;
@@ -244,6 +260,7 @@ export class AgentSession {
       ...(images.length > 0 ? { attachments: images } : {}),
     });
     this.pushTrace('run', '收到任务', (text || `[${images.length} 张截图]`).slice(0, 160));
+    this.beginDebugRun(text || `[${images.length} 张截图]`);
 
     const promptText =
       images.length > 0
@@ -286,7 +303,9 @@ export class AgentSession {
       const message = errorMessage(error);
       this.emit({ type: 'error', message });
       this.pushTrace('error', '运行失败', message);
+      this.finishDebugRun('error');
     } finally {
+      this.finishDebugRun('done');
       this.setBusy(false);
       this.schedulePersist();
       await this.writeChain;
@@ -316,6 +335,7 @@ export class AgentSession {
     this.bridge.cancelAll();
     this.agent?.abort();
     this.pushTrace('run', '已请求停止');
+    this.finishDebugRun('stopped');
   }
 
   private applyRecord(record: SessionRecord): void {
@@ -330,6 +350,7 @@ export class AgentSession {
     this.items = repaired.items;
     this.restoredMessages = repaired.messages;
     this.trace = [];
+    this.resetDebugTrace();
     this.turnCount = 0;
     this.streamingId = null;
     this.setBusy(false);
@@ -350,7 +371,51 @@ export class AgentSession {
       sessionId: this.sessionId,
       title: this.title,
       items: this.items,
+      debugTrace: this.debugTrace,
     });
+  }
+
+  private resetDebugTrace(): void {
+    this.debugTrace = debugModeEnabled() ? createDebugTrace() : null;
+    this.currentDebugRun = null;
+  }
+
+  private beginDebugRun(prompt: string): void {
+    if (!this.debugTrace) return;
+    const config = this.config;
+    const run = beginRun(this.debugTrace, {
+      id: `run-${crypto.randomUUID()}`,
+      prompt,
+      model: config
+        ? {
+            presetId: config.presetId,
+            baseUrl: config.baseUrl,
+            modelId: config.modelId,
+            supportsImages: config.supportsImages === true,
+          }
+        : null,
+      toolset: availableTools(config?.supportsImages === true).map((tool) => tool.name),
+    });
+    this.currentDebugRun = run;
+    this.emitDebugTrace();
+  }
+
+  private finishDebugRun(status: 'done' | 'error' | 'stopped'): void {
+    const run = this.currentDebugRun;
+    if (!run) return;
+    if (run.status === 'running') finishRun(run, status);
+    this.emitDebugTrace();
+  }
+
+  private addDebugNote(note: string): void {
+    if (!this.currentDebugRun) return;
+    this.currentDebugRun.notes.push(note);
+    this.emitDebugTrace();
+  }
+
+  private emitDebugTrace(): void {
+    if (!this.debugTrace) return;
+    this.emit({ type: 'debug_trace', trace: this.debugTrace });
   }
 
   private async emitSessions(): Promise<void> {
@@ -401,7 +466,7 @@ export class AgentSession {
       initialState: {
         systemPrompt: SYSTEM_PROMPT,
         model: toPiModel(config),
-        tools: PAGEHAND_TOOLS,
+        tools: availableTools(config.supportsImages === true),
         thinkingLevel: 'off',
       },
       streamFn: (model, context, options) =>
@@ -420,6 +485,7 @@ export class AgentSession {
         this.turnCount += 1;
         if (this.turnCount >= MAX_TURNS) {
           this.pushTrace('run', '达到单轮工具次数上限', `本轮最多 ${MAX_TURNS} 个回合`);
+          this.addDebugNote(`达到单轮工具次数上限（${MAX_TURNS}）`);
           return { action: 'end' };
         }
         return undefined;
@@ -480,6 +546,10 @@ export class AgentSession {
           item.error = error;
         }
         this.emit({ type: 'assistant_end', id, text, error });
+        if (this.currentDebugRun && text.trim()) {
+          setRunAnswer(this.currentDebugRun, text);
+          this.emitDebugTrace();
+        }
         if (failed) {
           this.pushTrace('error', '模型请求失败', error ?? '未知错误');
         }
@@ -500,6 +570,15 @@ export class AgentSession {
           startedAt,
         });
         this.pushTrace('tool', `调用 ${event.toolName}`, JSON.stringify(event.args ?? {}));
+        if (this.currentDebugRun) {
+          beginStep(this.currentDebugRun, {
+            tool: event.toolName,
+            toolCallId: event.toolCallId,
+            args: event.args,
+            at: startedAt,
+          });
+          this.emitDebugTrace();
+        }
         this.emit({
           type: 'tool_start',
           id,
@@ -531,6 +610,21 @@ export class AgentSession {
             durationMs,
           });
         }
+        if (this.currentDebugRun) {
+          const step = this.currentDebugRun.steps.findLast(
+            (candidate) =>
+              candidate.toolCallId === event.toolCallId && candidate.status === 'running',
+          );
+          if (step) {
+            finishStep(this.currentDebugRun, step, {
+              result: event.result,
+              isError: event.isError,
+              summary,
+              durationMs: event.durationMs,
+            });
+            this.emitDebugTrace();
+          }
+        }
         this.pushTrace('tool', `${event.toolName} ${event.isError ? '失败' : '完成'}`, summary);
         this.schedulePersist();
         return;
@@ -560,6 +654,14 @@ export class AgentSession {
         : { ...base, mode: 'permission', reason: request.reason, grantOrigin: request.grantOrigin };
 
     this.items.push(item);
+    if (request.kind === 'permission' && this.currentDebugRun) {
+      beginStep(this.currentDebugRun, {
+        tool: 'permission',
+        toolCallId: request.toolCallId,
+        args: { title: request.title, reason: request.reason },
+      });
+      this.emitDebugTrace();
+    }
     this.pushTrace('run', request.kind === 'ask' ? '等你补充信息' : '等你授权', request.title);
     this.emit({ type: 'interaction_open', item });
     this.syncKeepAlive();
@@ -576,6 +678,23 @@ export class AgentSession {
     if (item?.kind !== 'interaction') return;
     item.status = status;
     if (values) item.answers = values;
+    if (this.currentDebugRun) {
+      const step = this.currentDebugRun.steps.findLast(
+        (candidate) =>
+          candidate.toolCallId === item.toolCallId &&
+          candidate.tool === 'permission' &&
+          candidate.status === 'running',
+      );
+      if (step) {
+        const text = `授权结果：${INTERACTION_STATUS_LABEL[status]}`;
+        finishStep(this.currentDebugRun, step, {
+          result: { content: [{ type: 'text', text }], details: {} },
+          isError: status !== 'answered',
+          summary: text,
+        });
+        this.emitDebugTrace();
+      }
+    }
     this.emit({ type: 'interaction_settle', id, status, answers: values });
     this.pushTrace('run', INTERACTION_STATUS_LABEL[status], item.title);
     this.syncKeepAlive();
@@ -657,6 +776,39 @@ export class AgentSession {
       return source === 'element' && selector
         ? `已截图元素「${selector}」 · ${width}×${height}`
         : `已截图当前视口 · ${width}×${height}`;
+    }
+    if (name === 'interact' && details) {
+      const action = typeof details.action === 'string' ? details.action : '';
+      const labels: Record<string, string> = {
+        click: '点击',
+        fill: '填写',
+        type: '输入',
+        press: '按键',
+        select: '选择',
+        check: '勾选',
+        uncheck: '取消勾选',
+        hover: '悬停',
+        scroll: '滚动',
+        wait_for: '等待',
+      };
+      const target = details.target as
+        | { label?: string | null; risk_label?: string | null }
+        | undefined;
+      const labelText = target?.label || target?.risk_label;
+      const label = labelText ? `「${labelText}」` : '';
+      const changed = details.changed === true;
+      const already = details.already === true;
+      const navigation = details.navigation;
+      const newTab = details.new_tab as { title?: string } | null | undefined;
+      if (action === 'wait_for') return '等待条件已满足';
+      if (already) return '已经是目标状态，没有重复操作';
+      if (navigation === 'completed') return `已${labels[action] ?? '操作'}${label} · 页面已跳转`;
+      if (navigation === 'timeout')
+        return `已${labels[action] ?? '操作'}${label} · 页面可能仍在加载`;
+      if (navigation === 'closed') return `已${labels[action] ?? '操作'}${label} · 页面已关闭`;
+      if (newTab) return `已${labels[action] ?? '操作'}${label} · 打开了新标签页`;
+      if (!changed) return `已${labels[action] ?? '操作'}${label} · 页面无可见变化`;
+      return `已${labels[action] ?? '操作'}${label}`;
     }
     if (name === 'ask_user' && details) {
       const answers = details.answers as Record<string, unknown> | undefined;

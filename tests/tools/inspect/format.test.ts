@@ -72,7 +72,7 @@ describe('inspect 给模型的文本格式', () => {
     expect(text).toContain('匹配到 2 个可操作元素');
     expect(text).toContain('[e1] button「提交订单」 · 可见');
     expect(text).toContain('[e2] textbox「邮箱」 · 可见 · 当前值：a@b.com');
-    expect(text).toContain('密码框不会出现在结果里');
+    expect(text).toContain('密码框不会出现');
   });
 
   it('说明不可见原因、遮挡和状态', () => {

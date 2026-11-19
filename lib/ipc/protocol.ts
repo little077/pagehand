@@ -87,10 +87,94 @@ export interface TraceEntry {
   detail?: string;
 }
 
+export type DebugTraceChannel =
+  | 'text'
+  | 'structure'
+  | 'pixels'
+  | 'action'
+  | 'wait'
+  | 'interaction'
+  | 'other';
+
+export interface DebugTraceImageMeta {
+  mimeType: string;
+  bytes: number;
+  width?: number;
+  height?: number;
+}
+
+export interface DebugTraceTarget {
+  ref?: string | null;
+  tag?: string;
+  role?: string | null;
+  label?: string | null;
+  selector?: string | null;
+  name?: string | null;
+  risk_label?: string | null;
+}
+
+export interface DebugTraceStep {
+  seq: number;
+  tool: string;
+  toolCallId: string;
+  args: unknown;
+  startedAt: number;
+  durationMs?: number;
+  status: 'running' | 'ok' | 'error';
+  errorCode?: string;
+  summary: string;
+  resultPreview: string;
+  resultChars: number;
+  images: DebugTraceImageMeta[];
+  channel: DebugTraceChannel;
+  page?: { url: string; title: string } | null;
+  target?: DebugTraceTarget | null;
+  read_empty?: boolean;
+  flags: string[];
+}
+
+export interface DebugTraceFlags {
+  screenshotCount: number;
+  screenshotBeforeRead: boolean;
+  screenshotOnTextTask: boolean;
+  repeatCalls: number;
+  actionWithoutInspect: boolean;
+  unverifiedActions: number;
+  readEmpty: number;
+  blocked: boolean;
+  forbiddenLabels: string[];
+}
+
+export interface DebugTraceRun {
+  id: string;
+  startedAt: number;
+  endedAt: number | null;
+  prompt: string;
+  model: {
+    presetId: string;
+    baseUrl: string;
+    modelId: string;
+    supportsImages: boolean;
+  } | null;
+  toolset: string[];
+  page: { url: string; title: string } | null;
+  steps: DebugTraceStep[];
+  answer: string;
+  status: 'running' | 'done' | 'error' | 'stopped';
+  notes: string[];
+  flags: DebugTraceFlags;
+}
+
+export interface DebugTrace {
+  version: 1;
+  runs: DebugTraceRun[];
+}
+
 export interface SessionSnapshot {
   config: ProviderConfig | null;
   items: ChatItem[];
   trace: TraceEntry[];
+  debugTrace: DebugTrace | null;
   busy: boolean;
   sessionId: string | null;
   title: SessionTitle;
@@ -152,6 +236,7 @@ export type BgToUi =
       durationMs?: number;
     }
   | { type: 'trace'; entry: TraceEntry }
+  | { type: 'debug_trace'; trace: DebugTrace }
   | { type: 'busy'; value: boolean }
   | { type: 'interaction_open'; item: InteractionItem }
   | {
@@ -160,7 +245,13 @@ export type BgToUi =
       status: InteractionStatus;
       answers?: Record<string, string>;
     }
-  | { type: 'session_switched'; sessionId: string | null; title: SessionTitle; items: ChatItem[] }
+  | {
+      type: 'session_switched';
+      sessionId: string | null;
+      title: SessionTitle;
+      items: ChatItem[];
+      debugTrace: DebugTrace | null;
+    }
   | { type: 'sessions'; sessions: SessionSummary[] }
   | { type: 'models'; requestId: string; models: string[] }
   | { type: 'models_error'; requestId: string; message: string }

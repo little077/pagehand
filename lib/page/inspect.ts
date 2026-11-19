@@ -1,3 +1,5 @@
+import type { PageRefMeta, PageRefStore } from './ref-store';
+
 export type InspectHiddenReason =
   | 'display_none'
   | 'visibility_hidden'
@@ -107,6 +109,48 @@ export function collectInteractiveElements(options: InspectCollectOptions): Insp
   const COVERED_BY_MAX = 60;
   const ANCESTOR_DEPTH = 40;
   const ROLE_COUNT_MAX = 8;
+  const REF_STORE_KEY = '__pagehandRefStoreV1';
+  const REF_STORE_MAX = 4000;
+
+  // 注册表挂在 isolated world 的 globalThis 上，跨多次注入保持；页面导航后自动消失。
+  const holder = globalThis as unknown as Record<string, unknown>;
+  let refStore = holder[REF_STORE_KEY] as PageRefStore | undefined;
+  if (!refStore) {
+    refStore = {
+      seq: 0,
+      byElement: new WeakMap<Element, string>(),
+      byRef: new Map<string, WeakRef<Element>>(),
+      meta: new Map<string, PageRefMeta>(),
+    };
+    holder[REF_STORE_KEY] = refStore;
+  }
+
+  // 长页面反复 inspect 时先回收已经被 GC 的元素，避免 meta 无限增长。
+  if (refStore.byRef.size > REF_STORE_MAX) {
+    for (const [ref, weak] of [...refStore.byRef]) {
+      if (!weak.deref()) {
+        refStore.byRef.delete(ref);
+        refStore.meta.delete(ref);
+      }
+    }
+    // 活元素太多时按插入顺序淘汰最老的；旧 ref 会变成 stale，重新 inspect 即可。
+    let overflow = refStore.byRef.size - REF_STORE_MAX;
+    for (const ref of refStore.byRef.keys()) {
+      if (overflow <= 0) break;
+      refStore.byRef.delete(ref);
+      refStore.meta.delete(ref);
+      overflow -= 1;
+    }
+  }
+
+  const refFor = (el: Element): string => {
+    const existing = refStore.byElement.get(el);
+    if (existing && refStore.byRef.get(existing)?.deref() === el) return existing;
+    const ref = `e${++refStore.seq}`;
+    refStore.byElement.set(el, ref);
+    refStore.byRef.set(ref, new WeakRef(el));
+    return ref;
+  };
 
   const normalize = (value: string): string => value.replace(/\s+/g, ' ').trim();
   const cut = (value: string, max: number): string =>
@@ -273,6 +317,17 @@ export function collectInteractiveElements(options: InspectCollectOptions): Insp
     if (el instanceof HTMLInputElement) {
       const type = (el.type || 'text').toLowerCase();
       if (type === 'checkbox' || type === 'radio' || type === 'password') return null;
+      const autocomplete = (el.getAttribute('autocomplete') ?? '').toLowerCase();
+      const hint = `${el.name} ${el.id}`.toLowerCase();
+      if (
+        autocomplete.startsWith('cc-') ||
+        autocomplete === 'one-time-code' ||
+        /(cvv|cvc|security code|verification|one[-_ ]time|otp|passcode|验证码|password|card number|credit card|银行卡|信用卡|密码)/.test(
+          hint,
+        )
+      ) {
+        return null;
+      }
       return el.value ? cut(el.value, VALUE_MAX) : null;
     }
     if (el instanceof HTMLTextAreaElement) {
@@ -497,20 +552,32 @@ export function collectInteractiveElements(options: InspectCollectOptions): Insp
     return info;
   };
 
-  const elements: InspectElement[] = cappedScope.map((el, index) => {
+  const elements: InspectElement[] = cappedScope.map((el) => {
     const rect = el.getBoundingClientRect();
     const visibility = analyzeVisibility(el);
     const visible = visibility.visible;
     const viewport = inViewport(rect);
     const covered = visible && viewport ? coveredBy(el, rect) : null;
     const labelInfo = labelInfoOf(el);
+    const ref = refFor(el);
+    const selector = selectorFor(el);
+    const tag = el.tagName.toLowerCase();
+    const role = roleFor(el);
+
+    refStore.meta.set(ref, {
+      ref,
+      selector,
+      tag,
+      role,
+      label: labelInfo.value,
+    });
 
     return {
-      ref: `e${index + 1}`,
-      selector: selectorFor(el),
-      tag: el.tagName.toLowerCase(),
+      ref,
+      selector,
+      tag,
       kind: kindFor(el),
-      role: roleFor(el),
+      role,
       label: labelInfo.value,
       label_source: labelInfo.source,
       text: textFor(el),

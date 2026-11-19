@@ -1,5 +1,7 @@
 import type { BeforeToolCallResult } from '@earendil-works/pi-agent-core';
 import { type Browser, browser } from 'wxt/browser';
+import type { InteractAction } from '@/lib/page/interact';
+import { isMutatingAction } from './action-safety';
 import { addGrant, type GrantKey, isGranted, loadGrants, originOfUrl } from './grants';
 import type { InteractionBridge } from './interactions';
 
@@ -14,6 +16,26 @@ export interface ToolGate {
   /** 返回 null 表示这次调用不需要问用户。 */
   check(args: unknown): Promise<GateRequirement | null>;
 }
+
+const interactGate: ToolGate = {
+  toolName: 'interact',
+  async check(args) {
+    const action = (args as { action?: unknown }).action;
+    if (typeof action !== 'string' || !isMutatingAction(action as InteractAction)) return null;
+
+    // 只对用户正在看的页面授权；工具本身也只操作活动标签页。
+    const [tab] = await browser.tabs.query({ active: true, lastFocusedWindow: true });
+    if (!tab?.id) return null;
+    const origin = originOfUrl(tab.url);
+    if (!origin) return null;
+
+    return {
+      title: `操作 ${origin.replace(/^https?:\/\//, '')}`,
+      reason: 'Pagehand 将在这个网站上代你点击或填写。只在你确认后才执行；换站点会重新询问。',
+      grant: { origin, toolName: 'interact' },
+    };
+  },
+};
 
 const readTabGate: ToolGate = {
   toolName: 'read_tab',
@@ -50,7 +72,7 @@ const readTabGate: ToolGate = {
  * 新工具要加执行前确认时，只在这里注册一条 gate，门禁本身不用改。
  * 只读且指向用户当前页面的工具不该出现在这里——那是骚扰，不是安全。
  */
-export const TOOL_GATES: ToolGate[] = [readTabGate];
+export const TOOL_GATES: ToolGate[] = [readTabGate, interactGate];
 
 export interface GateCheckInput {
   toolName: string;

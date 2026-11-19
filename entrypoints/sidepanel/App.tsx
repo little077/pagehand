@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { type Browser, browser } from 'wxt/browser';
+import { debugModeEnabled } from '@/lib/debug/mode';
 import {
   DEBUG_DEFAULT_ROUTE,
   type DebugRoute,
@@ -10,6 +11,7 @@ import {
   type BgToUi,
   type CaptureResult,
   type ChatItem,
+  type DebugTrace,
   type ImageAttachment,
   type InteractionItem,
   PORT_NAME,
@@ -56,6 +58,7 @@ export default function App() {
   const [config, setConfig] = useState<ProviderConfig | null>(null);
   const [items, setItems] = useState<ChatItem[]>([]);
   const [trace, setTrace] = useState<TraceEntry[]>([]);
+  const [debugTrace, setDebugTrace] = useState<DebugTrace | null>(null);
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [traceOpen, setTraceOpen] = useState(false);
@@ -170,6 +173,7 @@ export default function App() {
           setConfig(message.config);
           setItems(message.items);
           setTrace(message.trace);
+          setDebugTrace(message.debugTrace);
           setBusy(message.busy);
           setSessionId(message.sessionId);
           setConnection('ready');
@@ -273,12 +277,16 @@ export default function App() {
         case 'trace':
           setTrace((previous) => [...previous, message.entry].slice(-100));
           return;
+        case 'debug_trace':
+          setDebugTrace(message.trace);
+          return;
         case 'busy':
           setBusy(message.value);
           return;
         case 'session_switched':
           setItems(message.items);
           setTrace([]);
+          setDebugTrace(message.debugTrace);
           setBusy(false);
           setSessionId(message.sessionId);
           return;
@@ -354,7 +362,7 @@ export default function App() {
   }, [toast]);
 
   useEffect(() => {
-    if (!(import.meta.env.DEV && import.meta.env.MODE === 'debug')) return;
+    if (!debugModeEnabled()) return;
     const sync = () => {
       const parsed = parseDebugHash(window.location.hash);
       setDebugOpen(parsed.open);
@@ -446,7 +454,7 @@ export default function App() {
   const pendingInteractions = items.filter(
     (item): item is InteractionItem => item.kind === 'interaction' && item.status === 'pending',
   );
-  const debugEnabled = import.meta.env.DEV && import.meta.env.MODE === 'debug';
+  const debugEnabled = debugModeEnabled();
 
   if (debugEnabled && debugOpen) {
     return (
@@ -515,7 +523,14 @@ export default function App() {
         onSave={saveConfig}
         onListModels={requestModels}
       />
-      <TraceSheet open={traceOpen} entries={trace} onClose={() => setTraceOpen(false)} />
+      <TraceSheet
+        open={traceOpen}
+        entries={trace}
+        debugTrace={debugTrace}
+        items={items}
+        debugEnabled={debugEnabled}
+        onClose={() => setTraceOpen(false)}
+      />
       <SessionsSheet
         open={sessionsOpen}
         sessions={sessions}

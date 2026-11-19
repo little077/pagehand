@@ -43,13 +43,52 @@ VITE_DEBUG_MODEL_SUPPORTS_IMAGES=false
 
 `.env*` 已被 gitignore，`.env.example` 例外保留；不要把真实 Key 提交到仓库。
 
+## 运行诊断包（仅 debug）
+
+`pnpm dev:debug` 下，「运行记录」弹窗顶部会多出一块「开发者诊断」，并出现「导出诊断包」按钮。普通 `pnpm dev` 和生产构建不显示，也不采集。
+
+### 什么时候用
+
+复现「模型选错工具」「为什么先截图」「操作后没验证」这类问题时：
+
+1. 在页面上跑一遍任务；
+2. 点 Header 的「运行记录」；
+3. 看诊断 flags；
+4. 点「导出诊断包」，把 zip 发给协作者或模型分析。
+
+### zip 内容
+
+| 文件 | 内容 |
+| --- | --- |
+| `trace.json` | 结构化 run/step：任务、模型、工具集、页面、每步参数（脱敏）、结果摘要、耗时、错误码、图片元数据、flags |
+| `summary.md` | 给人和模型看的工具链表、flags、最终回答、人工评测建议 |
+| `screenshots/step-XX-*.<ext>` | 本轮 trace 覆盖到的工具截图（截图工具通常是 jpg）；没有截图就没有这个目录 |
+
+不包含 API Key、密码、银行卡、截图 base64 塞进 JSON；截图以独立文件存在，避免上下文被 base64 撑爆。
+
+### flags 怎么读
+
+- `截图次数`：本轮 screenshot 调用次数；
+- `截图早于读取`：截图前没有 read_page/inspect；
+- `文字任务截图`：任务像“读标题/读正文/搜索”却先截图；
+- `重复调用`：同工具、同参数重复；
+- `未 inspect 先操作`：interact 前没有 inspect（用户直接给 selector 时会有误报）；
+- `操作未验证`：interact 后两步内没有 read_page/inspect/wait_for/screenshot；
+- `读取为空`：read_page 0 字或 inspect 0 个元素；
+- `疑似阻塞`：结果里出现登录/验证码/操作频繁等；
+- `敏感目标`：目标标签命中点赞、收藏、关注、评论、进入笔记等；
+- `备注`：例如达到单轮工具次数上限，说明本轮是被回合上限打断的。
+- `pnpm dev:debug` 下 Agent 单轮上限是 **200 回合**；普通 `pnpm dev` 和生产构建仍是 8。
+
+只用于判断工具链是否合理，不代表最终答案对错；最终还要核对标题/正文是否有页面证据。
+
 ## 入口
 
 侧边栏顶部居中，黑色刘海 + 红色 `debug 模式`：
 
 - 点击后在**侧边栏内部**切到 debug 页面，不新开浏览器标签页；
 - 顶部左侧「返回聊天」，右侧 `DEV ONLY`；
-- 当前没有注册调试模块，导航栏不显示，内容区是「还没有接入调试模块」的占位。
+- 当前注册了 Mock 模块；导航栏按 `DEBUG_ROUTES` 渲染，内容区按路由显示对应面板。
 
 ## 路由
 
@@ -73,7 +112,8 @@ VITE_DEBUG_MODEL_SUPPORTS_IMAGES=false
 - Debug 页面：`entrypoints/sidepanel/components/DebugView.tsx`
 - 路由：`lib/debug/routes.ts`
 - ENV 配置：`.env.example`、`lib/config/debug-env.ts`、`wxt.config.ts`
-- 测试：`tests/sidepanel/debug-routes.test.ts`、`tests/config/debug-env.test.ts`
+- 运行诊断：`lib/debug/trace.ts`、`entrypoints/sidepanel/components/TraceSheet.tsx`、`entrypoints/sidepanel/lib/debug-export.ts`
+- 测试：`tests/sidepanel/debug-routes.test.ts`、`tests/config/debug-env.test.ts`、`tests/debug/`
 
 ## 边界
 

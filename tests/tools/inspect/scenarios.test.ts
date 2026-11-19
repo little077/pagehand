@@ -22,7 +22,18 @@ describe('inspect 用户场景', () => {
 
     expect(snapshot.elements.map((element) => element.label)).toEqual(['邮箱', '登录']);
     expect(text).not.toContain('请输入密码');
-    expect(text).toContain('密码框不会出现在结果里');
+    expect(text).toContain('密码框不会出现');
+  });
+
+  it('银行卡和验证码的值不会出现在快照里', () => {
+    mount(`
+      <input id="card" name="card" autocomplete="cc-number" value="4111111111111111" />
+      <input id="otp" autocomplete="one-time-code" value="123456" />
+    `);
+
+    const snapshot = collectInteractiveElements({ includeHidden: true });
+
+    expect(snapshot.elements.every((element) => element.value === null)).toBe(true);
   });
 
   it('商品列表里按文字找到所有“加入购物车”，再按顺序选第二个', () => {

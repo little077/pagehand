@@ -81,6 +81,11 @@ const injectScript = browser.scripting.executeScript as unknown as (
 
 const lastInspect = new Map<number, InspectCacheEntry>();
 
+/** 写操作后页面可能已经变化，下一次 inspect 不应再复用旧结果。 */
+export function invalidateInspectCache(tabId: number): void {
+  lastInspect.delete(tabId);
+}
+
 function normalizeFrameId(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value)) return 0;
   return Math.max(0, Math.floor(value));
@@ -95,10 +100,10 @@ export const inspectTool: AgentTool<typeof parameters, InspectDetails> = {
     '找输入框优先用 kind="input" 或 role="textbox"；找搜索框用 input_type="search"；找按钮用 kind="button"。' +
     '结果里已经有 placeholder、input_type、name 等字段，需要这些信息时直接看结果，不要再读一遍 HTML。' +
     '要读文章正文用 read_page，不要用 inspect；要看图表等画面用截图。' +
-    '编号只在当前页面状态有效：页面跳转、列表刷新后要重新 inspect。' +
+    'ref 在元素移除或页面跳转后失效；要操作时用 interact。' +
     '不可见元素默认不列出，排查点击问题时可传 include_hidden=true。' +
     '出于安全考虑，密码框不会出现在结果里。' +
-    '只读：不点击、不填写、不滚动、不修改页面。当前版本还不能执行写操作。',
+    '只读：不点击、不填写、不滚动、不修改页面。需要操作页面时用 interact。shadow DOM 内部和跨域 iframe 的正文不在结果里。',
   parameters,
   replay: 'safe',
   async execute(_toolCallId, params, signal) {

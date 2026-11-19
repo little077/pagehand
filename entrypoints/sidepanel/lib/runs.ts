@@ -31,6 +31,7 @@ export const TOOL_LABELS: Record<string, string> = {
   read_selection: '读取选中文本',
   inspect: '检查页面元素',
   screenshot: '截图',
+  interact: '操作页面',
   pdf: '读取 PDF',
   ask_user: '向你提问',
 };
@@ -89,14 +90,17 @@ function buildRun(
   const hasToolError = tools.some((tool) => tool.status === 'error');
   const hasAnswerError =
     answer?.status === 'error' || notes.some((note) => note.status === 'error');
+  const hasAnswer = answer?.status === 'done' && answer.text.trim().length > 0;
 
   let status: RunStatus;
   if (runningTool) {
     status = options.isLast && options.busy ? 'running' : 'stopped';
-  } else if (hasToolError || hasAnswerError) {
+  } else if (hasAnswerError) {
     status = 'error';
   } else if (answer?.status === 'streaming' || (options.isLast && options.busy)) {
     status = 'running';
+  } else if (hasToolError && !hasAnswer) {
+    status = 'error';
   } else {
     status = 'done';
   }
@@ -225,8 +229,10 @@ export function describeRun(run: RunView, elapsedMs = run.elapsedMs): string {
     if (run.answer?.status === 'error') return '工具执行完成 · 回答生成失败';
     return '执行失败';
   }
+  const failedCount = run.tools.filter((tool) => tool.status === 'error').length;
   if (run.stepCount === 0) return '已完成';
   const parts = [`已执行 ${run.stepCount} 个工具`];
+  if (failedCount > 0) parts.push(`${failedCount} 步失败但已继续`);
   if (elapsedMs >= 1000) parts.push(formatElapsed(elapsedMs));
   return parts.join(' · ');
 }

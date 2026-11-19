@@ -1,3 +1,5 @@
+import { resetRefStore } from '@/lib/page/ref-store';
+
 export function mount(html: string): void {
   document.body.innerHTML = html;
 }
@@ -32,4 +34,5 @@ export function resetPage(): void {
   document.body.innerHTML = '';
   stubLayout();
   stubTopElement(null);
+  resetRefStore();
 }

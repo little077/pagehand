@@ -23,7 +23,7 @@ describe('运行块用户场景', () => {
     expect(describeRun(run)).toBe('已执行 7 个工具');
   });
 
-  it('第 4 步失败时头部直接指出失败位置', () => {
+  it('第 4 步失败但最终有回答时，头部显示失败步骤已继续', () => {
     const items = [
       user('帮我填这个表'),
       tool('inspect'),
@@ -34,7 +34,7 @@ describe('运行块用户场景', () => {
     ];
     const run = runOf(items);
 
-    expect(describeRun(run)).toBe('工具执行失败 · 第 4 步');
+    expect(describeRun(run)).toBe('已执行 4 个工具 · 1 步失败但已继续');
   });
 
   it('用户中途停止时，头部显示已停止而不是一直转圈', () => {

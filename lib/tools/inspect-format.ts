@@ -162,7 +162,7 @@ export function formatInspectForModel(snapshot: InspectSnapshot): string {
 
   lines.push(
     '',
-    '说明：编号只在当前页面状态有效，页面跳转或内容变化后要重新 inspect。出于安全考虑，密码框不会出现在结果里。当前版本只能查看，不能点击或填写。',
+    '说明：ref 在元素移除或页面跳转后失效，需要重新 inspect。出于安全考虑，密码框不会出现，银行卡和验证码的值不会回传。需要操作页面时用 interact。',
   );
   return lines.join('\n');
 }
