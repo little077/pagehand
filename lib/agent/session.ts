@@ -3,11 +3,13 @@ import type { AssistantMessage, TextContent } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { debugModeEnabled } from '@/lib/debug/mode';
 import {
+  addRunUsage,
   beginRun,
   beginStep,
   createDebugTrace,
   finishRun,
   finishStep,
+  isDebugTrace,
   setRunAnswer,
 } from '@/lib/debug/trace';
 import type {
@@ -47,6 +49,7 @@ import { RuntimeKeepAlive } from './keepalive';
 import { toPiModel } from './model';
 import { evaluateToolGate } from './permission-gate';
 import { SYSTEM_PROMPT } from './prompt';
+import { clearToolTargets, releaseToolTarget } from './tool-targets';
 
 const MAX_TURNS = debugModeEnabled() ? 200 : 8;
 const MAX_TRACE = 100;
@@ -179,6 +182,7 @@ export class AgentSession {
    * 新会话不落盘：等第一条用户消息到了再创建记录，避免列表里堆一串空会话。
    */
   async newSession(): Promise<void> {
+    clearToolTargets();
     this.bridge.cancelAll();
     this.agent?.abort();
     this.agent = null;
@@ -305,6 +309,7 @@ export class AgentSession {
       this.pushTrace('error', '运行失败', message);
       this.finishDebugRun('error');
     } finally {
+      clearToolTargets();
       this.finishDebugRun('done');
       this.setBusy(false);
       this.schedulePersist();
@@ -332,6 +337,7 @@ export class AgentSession {
   }
 
   abort(): void {
+    clearToolTargets();
     this.bridge.cancelAll();
     this.agent?.abort();
     this.pushTrace('run', '已请求停止');
@@ -339,6 +345,7 @@ export class AgentSession {
   }
 
   private applyRecord(record: SessionRecord): void {
+    clearToolTargets();
     this.bridge.cancelAll();
     this.agent?.abort();
     this.agent = null;
@@ -349,8 +356,14 @@ export class AgentSession {
     this.title = record.title;
     this.items = repaired.items;
     this.restoredMessages = repaired.messages;
-    this.trace = [];
-    this.resetDebugTrace();
+    this.trace = Array.isArray(record.trace) ? record.trace.slice(-MAX_TRACE) : [];
+    // 诊断跟着会话落盘，切回历史会话仍能导出当轮的 zip。
+    this.debugTrace = debugModeEnabled()
+      ? isDebugTrace(record.debugTrace)
+        ? record.debugTrace
+        : createDebugTrace()
+      : null;
+    this.currentDebugRun = null;
     this.turnCount = 0;
     this.streamingId = null;
     this.setBusy(false);
@@ -371,6 +384,7 @@ export class AgentSession {
       sessionId: this.sessionId,
       title: this.title,
       items: this.items,
+      trace: this.trace,
       debugTrace: this.debugTrace,
     });
   }
@@ -443,6 +457,8 @@ export class AgentSession {
         this.items.filter((item) => !(item.kind === 'assistant' && item.status === 'streaming')),
       ),
       messages: structuredClone(transcript ?? []),
+      trace: structuredClone(this.trace),
+      debugTrace: this.debugTrace ? structuredClone(this.debugTrace) : null,
     };
   }
 
@@ -480,6 +496,10 @@ export class AgentSession {
           { toolName: toolCall.name, toolCallId: toolCall.id, args, signal },
           this.bridge,
         );
+      },
+      afterToolCall: async ({ toolCall }) => {
+        releaseToolTarget(toolCall.id);
+        return undefined;
       },
       finishTurn: () => {
         this.turnCount += 1;
@@ -546,8 +566,9 @@ export class AgentSession {
           item.error = error;
         }
         this.emit({ type: 'assistant_end', id, text, error });
-        if (this.currentDebugRun && text.trim()) {
-          setRunAnswer(this.currentDebugRun, text);
+        if (this.currentDebugRun) {
+          addRunUsage(this.currentDebugRun, message.usage);
+          if (text.trim()) setRunAnswer(this.currentDebugRun, text);
           this.emitDebugTrace();
         }
         if (failed) {
@@ -749,6 +770,7 @@ export class AgentSession {
       return count > 0 ? `找到 ${count} 个标签页` : '没有可读取的网页标签页';
     }
     if (name === 'read_selection' && details) {
+      if (details.excludedSensitive === true) return '已排除密码框内容';
       if (details.empty === true) return '没有选中文本';
       const chars = typeof details.chars === 'number' ? details.chars : 0;
       return `已读取选中文本 · ${chars} 字${details.truncated === true ? '（已截断）' : ''}`;
@@ -779,6 +801,20 @@ export class AgentSession {
     }
     if (name === 'interact' && details) {
       const action = typeof details.action === 'string' ? details.action : '';
+      if (action === 'scroll' && (details.to === 'bottom' || details.to === 'top')) {
+        const rounds = typeof details.rounds === 'number' ? details.rounds : 1;
+        if (details.to === 'top') return details.changed === false ? '已经在顶部' : '已回到顶部';
+        if (details.outcome === 'stalled') return `加载停滞 · ${rounds} 轮`;
+        if (details.outcome === 'no_progress') return '滚动无效 · 可能没选对容器';
+        if (details.outcome === 'reached_end') {
+          return rounds > 1 ? `已滚到底 · ${rounds} 轮` : '已滚到底';
+        }
+        const distance =
+          typeof details.distance_bottom === 'number'
+            ? ` · 距底 ${Math.round(details.distance_bottom)}px`
+            : '';
+        return `滚动了 ${rounds} 轮 · 未确认到底${distance}`;
+      }
       const labels: Record<string, string> = {
         click: '点击',
         fill: '填写',

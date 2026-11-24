@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addRunUsage,
   beginRun,
   beginStep,
   channelFor,
   createDebugTrace,
   finishRun,
   finishStep,
+  isDebugTrace,
   pageFromDetails,
   redactArgs,
   setRunAnswer,
@@ -131,5 +133,62 @@ describe('debug trace 纯函数', () => {
     expect(run.flags.blocked).toBe(false);
     step(run, 'read_page', {}, '请登录后查看搜索结果');
     expect(run.flags.blocked).toBe(true);
+  });
+});
+
+describe('isDebugTrace', () => {
+  it('接受自己写出的 trace，拒绝空值和坏形状', () => {
+    expect(isDebugTrace(createDebugTrace())).toBe(true);
+    expect(isDebugTrace(null)).toBe(false);
+    expect(isDebugTrace({})).toBe(false);
+    expect(isDebugTrace({ version: 2, runs: [] })).toBe(false);
+    expect(isDebugTrace({ version: 1, runs: 'nope' })).toBe(false);
+  });
+});
+
+describe('token 用量', () => {
+  it('按每次模型响应累加输入、输出和缓存 token', () => {
+    const { run } = makeTrace();
+    addRunUsage(run, { input: 1000, output: 200, cacheRead: 300, totalTokens: 1500 });
+    addRunUsage(run, { input: 2000, output: 300, cacheRead: 500, totalTokens: 2800 });
+
+    expect(run.usage).toEqual({
+      calls: 2,
+      input: 3000,
+      output: 500,
+      cacheRead: 800,
+      cacheWrite: 0,
+      totalTokens: 4300,
+    });
+  });
+
+  it('供应商没给合计时按各项相加', () => {
+    const { run } = makeTrace();
+    addRunUsage(run, { input: 100, output: 50 });
+    expect(run.usage?.totalTokens).toBe(150);
+    expect(run.usage?.calls).toBe(1);
+  });
+
+  it('summary.md 输出 Token 表和合计', () => {
+    const { trace, run } = makeTrace();
+    addRunUsage(run, { input: 1000, output: 200, cacheRead: 300, totalTokens: 1500 });
+    const second = beginRun(trace, {
+      id: 'run-2',
+      prompt: '第二轮',
+      model: null,
+      toolset: ['read_page'],
+    });
+    addRunUsage(second, { input: 500, output: 100, totalTokens: 600 });
+
+    const markdown = traceSummaryMarkdown(trace);
+    expect(markdown).toContain('## Token 用量');
+    expect(markdown).toContain('| 合计 | 2 | 1500 | 300 | 0 | 300 | 2100 |');
+    expect(markdown).toContain('输入 1000');
+  });
+
+  it('旧诊断包没有 usage 时显示占位，不崩', () => {
+    const { trace, run } = makeTrace();
+    run.usage = undefined;
+    expect(traceSummaryMarkdown(trace)).toContain(`| ${run.id} | 0 | — | — | — | — | — |`);
   });
 });

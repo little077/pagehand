@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { beginRun, createDebugTrace } from '@/lib/debug/trace';
 import type { SessionRecord } from '@/lib/sessions/record';
 
 const IMAGE = 'aGVsbG8=';
@@ -132,5 +133,26 @@ describe('IndexedDB v3', () => {
 
     await store.removeSession(second);
     expect(await counts()).toEqual({ attachments: 0, links: 0 });
+  });
+
+  it('运行诊断随会话落盘，重新读取后仍能导出', async () => {
+    const id = `session-${Date.now()}-trace`;
+    const debugTrace = createDebugTrace();
+    beginRun(debugTrace, {
+      id: 'run-1',
+      prompt: '滚动评论区',
+      model: null,
+      toolset: ['inspect', 'interact'],
+    });
+    const stored = record(id);
+    stored.trace = [{ id: 'tr-1', at: 1, kind: 'run', title: '收到任务', detail: '滚动评论区' }];
+    stored.debugTrace = debugTrace;
+    await store.writeSession(stored);
+
+    const loaded = await store.readSession(id);
+    expect(loaded?.trace).toEqual(stored.trace);
+    expect(loaded?.debugTrace?.runs[0]?.prompt).toBe('滚动评论区');
+
+    await store.removeSession(id);
   });
 });

@@ -39,6 +39,7 @@ export type InteractErrorCode =
   | 'timeout'
   | 'cancelled'
   | 'unsupported_action'
+  | 'permission_target_mismatch'
   | 'unknown';
 
 export interface InteractTargetSummary {
@@ -76,10 +77,16 @@ export interface InteractPageParams {
   option?: string;
   deltaX?: number;
   deltaY?: number;
+  /** scroll 的绝对目标；给了 to 就忽略 deltaX/deltaY。 */
+  to?: 'bottom' | 'top';
+  /** 滚到底后等待懒加载内容变长的时间，仅内部循环使用。 */
+  settleMs?: number;
   state?: InteractWaitState;
   value?: string;
   timeout?: number;
   frameId?: number;
+  expectedOrigin?: string;
+  expectedTargetRef?: string;
 }
 
 export interface InteractPageResult {
@@ -116,6 +123,8 @@ interface RefStore {
   byRef: Map<string, WeakRef<Element>>;
   meta: Map<string, RefMeta>;
   cancelled?: boolean;
+  /** to=bottom 时记住选中的滚动容器，避免每轮重新猜。 */
+  scrollContainer?: { key: string; ref: WeakRef<Element> | null; from: string };
 }
 
 interface ResolvedTarget {
@@ -218,6 +227,13 @@ export async function runInteraction(params: InteractPageParams): Promise<Intera
     target: InteractTargetSummary | null = null,
   ): InteractPageResult {
     return result({ ok: false, code, message, target });
+  }
+
+  if (params.expectedOrigin && location.origin !== params.expectedOrigin) {
+    return fail(
+      'permission_target_mismatch',
+      '授权后的页面已经切换到其他网站，操作已取消。请针对当前网站重新确认。',
+    );
   }
 
   function escapeId(value: string): string {
@@ -1197,6 +1213,178 @@ export async function runInteraction(params: InteractPageParams): Promise<Intera
     }
   }
 
+  /** 统一读容器的滚动位置；没有容器时按整页滚动算。 */
+  function scrollMetrics(container: Element | null): {
+    top: number;
+    height: number;
+    client: number;
+  } {
+    if (container) {
+      return {
+        top: container.scrollTop,
+        height: container.scrollHeight,
+        client: container.clientHeight,
+      };
+    }
+    const doc = document.scrollingElement ?? document.documentElement;
+    return { top: window.scrollY, height: doc.scrollHeight, client: window.innerHeight };
+  }
+
+  function distanceToBottom(metrics: { top: number; height: number; client: number }): number {
+    return Math.max(0, metrics.height - metrics.client - metrics.top);
+  }
+
+  function setScrollPosition(container: Element | null, to: 'bottom' | 'top'): void {
+    const metrics = scrollMetrics(container);
+    const top = to === 'bottom' ? Math.max(0, metrics.height - metrics.client) : 0;
+    if (container) {
+      container.scrollTop = top;
+      return;
+    }
+    window.scrollTo(0, top);
+  }
+
+  function isScrollableElement(el: Element): boolean {
+    const style = styleOf(el);
+    if (!style) return false;
+    if (!/(auto|scroll|overlay|hidden)/.test(`${style.overflowY} ${style.overflowX}`)) return false;
+    return el.scrollHeight > el.clientHeight + 2 || el.scrollWidth > el.clientWidth + 2;
+  }
+
+  function visibleAreaOf(el: Element): number {
+    const style = styleOf(el);
+    if (style && (style.visibility === 'hidden' || style.display === 'none')) return 0;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return 0;
+    return rect.width * rect.height;
+  }
+
+  /** 目标是个外层包装时，真正的滚动区往往在它内部，而不是祖先。 */
+  function findScrollableDescendant(root: Element): Element | null {
+    const nodes = root.querySelectorAll('*');
+    const cap = Math.min(nodes.length, 3000);
+    let best: Element | null = null;
+    let bestArea = 0;
+    for (let index = 0; index < cap; index += 1) {
+      const node = nodes[index];
+      if (!node || !isScrollableElement(node)) continue;
+      const area = visibleAreaOf(node);
+      if (area > bestArea) {
+        best = node;
+        bestArea = area;
+      }
+    }
+    return best;
+  }
+
+  function resolveScrollContainer(
+    el: Element,
+    explicit: boolean,
+    key: string,
+  ): { el: Element | null; from: string } {
+    if (!explicit) return { el: null, from: 'window' };
+
+    const cached = activeStore.scrollContainer;
+    if (cached && cached.key === key) {
+      if (!cached.ref) return { el: null, from: cached.from };
+      const cachedEl = cached.ref.deref();
+      if (cachedEl?.isConnected && visibleAreaOf(cachedEl) > 0) {
+        return { el: cachedEl, from: cached.from };
+      }
+    }
+
+    const remember = (found: { el: Element | null; from: string }) => {
+      activeStore.scrollContainer = {
+        key,
+        ref: found.el ? new WeakRef(found.el) : null,
+        from: found.from,
+      };
+      return found;
+    };
+
+    if (isScrollableElement(el)) return remember({ el, from: 'self' });
+
+    const descendant = findScrollableDescendant(el);
+    if (descendant) return remember({ el: descendant, from: 'descendant' });
+
+    let ancestor: Element | null = el.parentElement;
+    while (ancestor && ancestor !== document.body && ancestor !== document.documentElement) {
+      if (isScrollableElement(ancestor) && visibleAreaOf(ancestor) > 0) {
+        return remember({ el: ancestor, from: 'ancestor' });
+      }
+      ancestor = ancestor.parentElement;
+    }
+    return remember({ el: null, from: 'window' });
+  }
+
+  function textTailOf(container: Element | null, max: number): string {
+    const source = container ?? document.body;
+    // biome-ignore lint/performance/useDomNodeTextContent: 只认渲染出来的文字，隐藏节点里的“加载中/没有更多”不能算数
+    const text = (source as HTMLElement).innerText ?? source.textContent ?? '';
+    return text.replace(/\s+/g, ' ').trim().slice(-max);
+  }
+
+  function detectLoadingIndicator(container: Element | null): string | null {
+    const scope: ParentNode = container ?? document.body;
+    const nodes = scope.querySelectorAll(
+      '[role="progressbar"],[aria-busy="true"],[class*="loading"],[class*="Loading"],[class*="spinner"],[class*="Spinner"],[class*="spin"],[class*="load-more"],[data-e2e*="loading"],[data-e2e*="load-more"]',
+    );
+    const limit = Math.min(nodes.length, 40);
+    for (let index = 0; index < limit; index += 1) {
+      const node = nodes[index];
+      if (!node || !analyzeVisibility(node).visible) continue;
+      const text = ((node as HTMLElement).textContent ?? '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 40);
+      const hint = `${(node as HTMLElement).className ?? ''} ${node.getAttribute('aria-label') ?? ''} ${text}`;
+      if (node.getAttribute('role') === 'progressbar' || /加载|loading|spinner|spin/i.test(hint)) {
+        return text || '加载中';
+      }
+    }
+    const tail = textTailOf(container, 300);
+    return /(加载中|正在加载|loading)/i.test(tail) ? '加载中' : null;
+  }
+
+  function detectEndMarker(container: Element | null): string | null {
+    const tail = textTailOf(container, 500);
+    const match = tail.match(/(没有更多[^，。,\s]*|到底了|已加载全部|no more[^.]*)/i);
+    return match ? match[0].slice(0, 24) : null;
+  }
+
+  /** 滚到底后等页面变安静：高度长出来、或连续 600ms 没有 DOM 变化，或超时。 */
+  async function waitForRoundSettle(
+    container: Element | null,
+    beforeHeight: number,
+    maxWait: number,
+  ): Promise<void> {
+    if (maxWait <= 0) return;
+    let lastMutation = performance.now();
+    const observer = new MutationObserver(() => {
+      lastMutation = performance.now();
+    });
+    try {
+      observer.observe(container ?? document.body, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+        attributes: true,
+      });
+    } catch {
+      // 观察失败时退化成纯轮询。
+    }
+    const started = performance.now();
+    try {
+      while (performance.now() - started < maxWait) {
+        await sleep(80);
+        if (scrollMetrics(container).height > beforeHeight + 1) return;
+        if (performance.now() - started >= 600 && performance.now() - lastMutation >= 600) return;
+      }
+    } finally {
+      observer.disconnect();
+    }
+  }
+
   function installObserver(): {
     stop: () => number;
     mutated: () => number;
@@ -1357,6 +1545,12 @@ export async function runInteraction(params: InteractPageParams): Promise<Intera
     const resolved = resolveTarget();
     const target = resolved.summary;
     const el = resolved.el;
+    if (phase === 'act' && params.expectedTargetRef && refFor(el) !== params.expectedTargetRef) {
+      throw new PageFailure(
+        'permission_target_mismatch',
+        '确认后的目标元素已经变化，操作已取消。请重新检查页面并确认。',
+      );
+    }
 
     const beginObservation = (): void => {
       if (phase !== 'act' || observationState.observer) return;
@@ -1507,9 +1701,64 @@ export async function runInteraction(params: InteractPageParams): Promise<Intera
       }
     } else if (action === 'scroll') {
       if (phase === 'act') {
+        const container = params.ref || params.selector ? scrollContainerOf(el) : null;
+        if (params.to) {
+          const explicit = Boolean(params.ref || params.selector);
+          const key = params.ref
+            ? `ref:${params.ref}`
+            : params.selector
+              ? `sel:${params.selector}`
+              : 'window';
+          const chosen = resolveScrollContainer(el, explicit, key);
+          const scrollTarget = chosen.el;
+          const before = scrollMetrics(scrollTarget);
+          setScrollPosition(scrollTarget, params.to);
+          const waitMs =
+            params.to === 'bottom' ? Math.min(2500, Math.max(200, params.settleMs ?? 600)) : 0;
+          const waitStarted = performance.now();
+          await waitForRoundSettle(scrollTarget, before.height, waitMs);
+          const waitedMs = Math.round(performance.now() - waitStarted);
+          const after = scrollMetrics(scrollTarget);
+          const distance = distanceToBottom(after);
+          const atBottom = distance <= 2;
+          const grew = after.height > before.height + 1;
+          const loadingLabel = detectLoadingIndicator(scrollTarget);
+          const endMarker = detectEndMarker(scrollTarget);
+          const lastText = textTailOf(scrollTarget, 160);
+          return result({
+            message:
+              params.to === 'top'
+                ? '已滚动到顶部。'
+                : atBottom
+                  ? `已滚动到当前最底（内容高度 ${before.height}→${after.height}px）。`
+                  : `已滚动到当前最底，距底 ${distance}px。`,
+            target: explicit ? target : null,
+            state: stateFor(el),
+            changed: after.top !== before.top || grew,
+            details: {
+              to: params.to,
+              container: scrollTarget ? describe(scrollTarget) : '整个页面',
+              container_selector: scrollTarget ? selectorFor(scrollTarget).slice(0, 220) : null,
+              container_from: chosen.from,
+              before_top: before.top,
+              before_height: before.height,
+              scroll_top: after.top,
+              scroll_height: after.height,
+              client_height: after.client,
+              at_bottom: atBottom,
+              distance_bottom: distance,
+              grew,
+              loading: loadingLabel !== null,
+              loading_label: loadingLabel,
+              end_marker: endMarker,
+              last_text: lastText || null,
+              waited_ms: waitedMs,
+            },
+          });
+        }
+
         const deltaX = params.deltaX ?? 0;
         const deltaY = params.deltaY ?? 300;
-        const container = params.ref || params.selector ? scrollContainerOf(el) : null;
         const beforeX = container ? container.scrollLeft : window.scrollX;
         const beforeY = container ? container.scrollTop : window.scrollY;
         scrollBy(deltaX, deltaY, container);
@@ -1517,6 +1766,7 @@ export async function runInteraction(params: InteractPageParams): Promise<Intera
         const afterX = container ? container.scrollLeft : window.scrollX;
         const afterY = container ? container.scrollTop : window.scrollY;
         const changed = beforeX !== afterX || beforeY !== afterY;
+        const metrics = scrollMetrics(container);
         return result({
           message: changed
             ? `已滚动（${Math.round(afterX - beforeX)}, ${Math.round(afterY - beforeY)}）。`
@@ -1529,6 +1779,11 @@ export async function runInteraction(params: InteractPageParams): Promise<Intera
             before_y: beforeY,
             after_x: afterX,
             after_y: afterY,
+            scroll_top: metrics.top,
+            scroll_height: metrics.height,
+            client_height: metrics.client,
+            at_bottom: distanceToBottom(metrics) <= 2,
+            distance_bottom: distanceToBottom(metrics),
             container: container ? describe(container) : null,
           },
         });

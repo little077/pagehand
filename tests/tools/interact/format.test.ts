@@ -116,4 +116,123 @@ describe('interact 结果格式化', () => {
 
     expect(details).toEqual({ error: '元素已移除', code: 'ref_stale' });
   });
+
+  it('scroll 到底时说明轮数，并告诉模型不用继续滚', () => {
+    const text = formatInteractForModel(
+      outcome({
+        page: page({
+          action: 'scroll',
+          target: null,
+          changed: true,
+          details: {
+            to: 'bottom',
+            outcome: 'reached_end',
+            at_bottom: true,
+            rounds: 12,
+            scroll_top: 1400,
+            scroll_height: 1600,
+            client_height: 200,
+            distance_bottom: 0,
+            end_marker: '没有更多评论',
+          },
+        }),
+      }),
+    );
+
+    expect(text).toContain('已滚到底（12 轮）');
+    expect(text).toContain('不需要继续往下滚');
+    expect(text).toContain('没有更多评论');
+  });
+
+  it('scroll 加载停滞时说明还在转圈，不要重复滚', () => {
+    const text = formatInteractForModel(
+      outcome({
+        page: page({
+          action: 'scroll',
+          target: null,
+          changed: true,
+          details: {
+            to: 'bottom',
+            outcome: 'stalled',
+            at_bottom: true,
+            rounds: 9,
+            distance_bottom: 0,
+            loading: true,
+            loading_label: '加载中',
+            no_growth_ms: 7200,
+          },
+        }),
+      }),
+    );
+
+    expect(text).toContain('已到当前加载末尾');
+    expect(text).toContain('加载中');
+    expect(text).toContain('7 秒');
+    expect(text).toContain('不要重复滚动');
+  });
+
+  it('scroll 还没确认到底时建议再调用一次', () => {
+    const text = formatInteractForModel(
+      outcome({
+        page: page({
+          action: 'scroll',
+          target: null,
+          changed: true,
+          details: {
+            to: 'bottom',
+            outcome: 'budget_exhausted',
+            at_bottom: false,
+            rounds: 40,
+            scroll_top: 1000,
+            scroll_height: 1800,
+            client_height: 200,
+            distance_bottom: 600,
+          },
+        }),
+      }),
+    );
+
+    expect(text).toContain('还没确认到底');
+    expect(text).toContain('to=bottom');
+  });
+
+  it('给 UI 的 scroll details 保留结论、加载状态和容器信息', () => {
+    const details = toInteractDetails(
+      outcome({
+        page: page({
+          action: 'scroll',
+          target: null,
+          changed: true,
+          details: {
+            to: 'bottom',
+            outcome: 'stalled',
+            at_bottom: true,
+            rounds: 9,
+            scroll_top: 1400,
+            scroll_height: 1600,
+            client_height: 200,
+            distance_bottom: 0,
+            loading: true,
+            loading_label: '加载中',
+            no_growth_ms: 7200,
+            container: 'div',
+            container_selector: '#merge-all-comment-container',
+            container_from: 'descendant',
+          },
+        }),
+      }),
+    );
+
+    expect(details).toMatchObject({
+      action: 'scroll',
+      to: 'bottom',
+      outcome: 'stalled',
+      loading: true,
+      loading_label: '加载中',
+      rounds: 9,
+      distance_bottom: 0,
+      container_selector: '#merge-all-comment-container',
+      container_from: 'descendant',
+    });
+  });
 });

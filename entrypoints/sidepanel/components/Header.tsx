@@ -11,7 +11,7 @@ interface HeaderProps {
 
 const CONNECTION_LABEL: Record<HeaderProps['connection'], string> = {
   connecting: '连接中',
-  ready: '只读模式',
+  ready: '已连接',
   lost: '已断开',
 };
 

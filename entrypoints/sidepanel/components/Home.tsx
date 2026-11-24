@@ -52,7 +52,7 @@ export function Home({ configured, onPick, onOpenSettings }: HomeProps) {
       </h2>
       <p className="mt-2.5 max-w-[320px] text-[12px] leading-relaxed text-ink-soft">
         Pagehand
-        会读取你点名的页面，帮你总结、列大纲、找链接，也能跨标签页对比内容。它不会点击、填写或提交。
+        会读取你点名的页面，帮你总结、列大纲、找链接，也能在你授权后代你点击、填写和跨标签页对比内容。它不会自动发送消息、付款、删除或提交表单。
       </p>
 
       {!configured && (
@@ -101,7 +101,7 @@ export function Home({ configured, onPick, onOpenSettings }: HomeProps) {
 
       <div className="mt-6 flex items-center gap-1.5 px-0.5 text-[10px] text-ink-faint">
         <ShieldCheck size={12} />
-        第一版只有读取能力，所有操作都由你亲手完成
+        当前页读取免确认；代操作和后台读取会先征求授权
       </div>
     </div>
   );

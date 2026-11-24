@@ -60,11 +60,15 @@ VITE_DEBUG_MODEL_SUPPORTS_IMAGES=false
 
 | 文件 | 内容 |
 | --- | --- |
-| `trace.json` | 结构化 run/step：任务、模型、工具集、页面、每步参数（脱敏）、结果摘要、耗时、错误码、图片元数据、flags |
-| `summary.md` | 给人和模型看的工具链表、flags、最终回答、人工评测建议 |
+| `trace.json` | 结构化 run/step：任务、模型、工具集、页面、每步参数（脱敏）、结果摘要、耗时、错误码、图片元数据、flags、token 用量 |
+| `summary.md` | 给人和模型看的工具链表、flags、最终回答、人工评测建议、每个 run 的 token 表和合计 |
 | `screenshots/step-XX-*.<ext>` | 本轮 trace 覆盖到的工具截图（截图工具通常是 jpg）；没有截图就没有这个目录 |
 
 不包含 API Key、密码、银行卡、截图 base64 塞进 JSON；截图以独立文件存在，避免上下文被 base64 撑爆。
+
+诊断和截图会跟着会话一起落盘：关掉侧边栏或切到别的会话，再从历史列表点回来，「运行记录」里仍然能导出当轮的 zip。
+
+Token 用量按每次模型响应累加：`输入` 是每次请求的上下文总量之和，`缓存命中` 是供应商报告的缓存读 token。端点不返回 usage 时只统计调用次数，token 显示为未返回。
 
 ### flags 怎么读
 

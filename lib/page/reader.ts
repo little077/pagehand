@@ -28,6 +28,7 @@ export interface ReadRequest {
   selector?: string | null;
   maxLength?: number;
   frameId?: number;
+  validateTarget?: (tab: Browser.tabs.Tab) => void;
 }
 
 export interface ChildFrame {
@@ -429,6 +430,7 @@ function errorMessage(error: unknown): string {
 
 export async function readPage(request: ReadRequest): Promise<ReadOutcome> {
   const tab = await resolveTab(request.tabId);
+  request.validateTarget?.(tab);
   const tabId = tab.id as number;
   const url = assertReadableUrl(tab.url);
 

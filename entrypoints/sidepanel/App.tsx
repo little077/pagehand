@@ -285,7 +285,7 @@ export default function App() {
           return;
         case 'session_switched':
           setItems(message.items);
-          setTrace([]);
+          setTrace(message.trace);
           setDebugTrace(message.debugTrace);
           setBusy(false);
           setSessionId(message.sessionId);

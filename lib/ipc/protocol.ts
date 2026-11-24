@@ -145,6 +145,17 @@ export interface DebugTraceFlags {
   forbiddenLabels: string[];
 }
 
+/** 一轮任务实际消耗的模型 token；按每次 assistant 响应累加。 */
+export interface DebugTraceUsage {
+  /** 模型调用次数（每次 message_end 算一次）。 */
+  calls: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+}
+
 export interface DebugTraceRun {
   id: string;
   startedAt: number;
@@ -163,6 +174,8 @@ export interface DebugTraceRun {
   status: 'running' | 'done' | 'error' | 'stopped';
   notes: string[];
   flags: DebugTraceFlags;
+  /** 旧诊断包没有这个字段，读取时要按 0 处理。 */
+  usage?: DebugTraceUsage;
 }
 
 export interface DebugTrace {
@@ -250,6 +263,7 @@ export type BgToUi =
       sessionId: string | null;
       title: SessionTitle;
       items: ChatItem[];
+      trace: TraceEntry[];
       debugTrace: DebugTrace | null;
     }
   | { type: 'sessions'; sessions: SessionSummary[] }

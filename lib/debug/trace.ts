@@ -6,6 +6,7 @@ import type {
   DebugTraceRun,
   DebugTraceStep,
   DebugTraceTarget,
+  DebugTraceUsage,
   ToolImage,
 } from '@/lib/ipc/protocol';
 
@@ -119,6 +120,46 @@ export function createDebugTrace(): DebugTrace {
   return { version: 1, runs: [] };
 }
 
+function emptyUsage(): DebugTraceUsage {
+  return { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
+}
+
+/** 每次 assistant 响应累加一次；供应商没返回 usage 时只计调用次数。 */
+export function addRunUsage(
+  run: DebugTraceRun,
+  usage: {
+    input?: number;
+    output?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    totalTokens?: number;
+  },
+): void {
+  const current = run.usage ?? emptyUsage();
+  const input = Math.max(0, Math.round(usage.input ?? 0));
+  const output = Math.max(0, Math.round(usage.output ?? 0));
+  const cacheRead = Math.max(0, Math.round(usage.cacheRead ?? 0));
+  const cacheWrite = Math.max(0, Math.round(usage.cacheWrite ?? 0));
+  const total =
+    usage.totalTokens && usage.totalTokens > 0
+      ? Math.round(usage.totalTokens)
+      : input + output + cacheRead + cacheWrite;
+  run.usage = {
+    calls: current.calls + 1,
+    input: current.input + input,
+    output: current.output + output,
+    cacheRead: current.cacheRead + cacheRead,
+    cacheWrite: current.cacheWrite + cacheWrite,
+    totalTokens: current.totalTokens + total,
+  };
+}
+
+/** 从 IndexedDB 恢复时先校验形状，坏数据降级成空 trace，不要让整条会话打不开。 */
+export function isDebugTrace(value: unknown): value is DebugTrace {
+  const record = objectValue(value);
+  return record?.version === 1 && Array.isArray(record.runs);
+}
+
 export function beginRun(
   trace: DebugTrace,
   input: {
@@ -142,6 +183,7 @@ export function beginRun(
     status: 'running',
     notes: [],
     flags: emptyFlags(),
+    usage: emptyUsage(),
   };
   trace.runs.push(run);
   if (trace.runs.length > MAX_RUNS) trace.runs.shift();
@@ -354,6 +396,12 @@ function formatTime(at: number): string {
   return new Date(at).toISOString();
 }
 
+function usageRow(run: DebugTraceRun): string {
+  const usage = run.usage;
+  if (!usage) return `| ${run.id} | 0 | — | — | — | — | — |`;
+  return `| ${run.id} | ${usage.calls} | ${usage.input} | ${usage.cacheRead} | ${usage.cacheWrite} | ${usage.output} | ${usage.totalTokens} |`;
+}
+
 export function traceSummaryMarkdown(trace: DebugTrace): string {
   const lines = [
     '# Pagehand 运行诊断',
@@ -364,6 +412,38 @@ export function traceSummaryMarkdown(trace: DebugTrace): string {
     '> 这份日志只记录工具调用和可观测结果，不包含模型思维链、API Key、密码或银行卡。',
     '',
   ];
+
+  const total = trace.runs.reduce(
+    (sum, run) => {
+      const usage = run.usage;
+      if (!usage) return sum;
+      return {
+        calls: sum.calls + usage.calls,
+        input: sum.input + usage.input,
+        output: sum.output + usage.output,
+        cacheRead: sum.cacheRead + usage.cacheRead,
+        cacheWrite: sum.cacheWrite + usage.cacheWrite,
+        totalTokens: sum.totalTokens + usage.totalTokens,
+      };
+    },
+    { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
+  );
+
+  if (trace.runs.length > 0) {
+    lines.push('## Token 用量');
+    lines.push('');
+    lines.push('| Run | 模型调用 | 输入 | 缓存命中 | 缓存写入 | 输出 | 合计 |');
+    lines.push('| --- | --- | --- | --- | --- | --- | --- |');
+    for (const run of trace.runs) lines.push(usageRow(run));
+    if (trace.runs.length > 1) {
+      lines.push(
+        `| 合计 | ${total.calls} | ${total.input} | ${total.cacheRead} | ${total.cacheWrite} | ${total.output} | ${total.totalTokens} |`,
+      );
+    }
+    lines.push('');
+    lines.push('> 输入是每次请求的上下文总量按调用次数累加，不是最后一段文本的长度。');
+    lines.push('');
+  }
 
   for (const run of trace.runs) {
     lines.push(`## Run ${run.id}`);
@@ -376,6 +456,11 @@ export function traceSummaryMarkdown(trace: DebugTrace): string {
     );
     lines.push(`- 工具集：${run.toolset.join(', ')}`);
     lines.push(`- 状态：${run.status} · ${run.steps.length} 步`);
+    if (run.usage) {
+      lines.push(
+        `- Token：${run.usage.calls} 次调用 · 输入 ${run.usage.input} · 输出 ${run.usage.output} · 合计 ${run.usage.totalTokens}`,
+      );
+    }
     if (run.notes.length > 0) lines.push(`- 运行备注：${run.notes.join('；')}`);
     lines.push('');
     lines.push('### 诊断 flags');

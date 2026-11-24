@@ -29,7 +29,7 @@ const selectorSchema = Type.Optional(
 const maxLengthSchema = Type.Optional(
   Type.Number({
     description:
-      `返回内容的最大字符数，默认 ${READ_DEFAULT_MAX_CHARS}，范围 ${READ_MIN_MAX_CHARS}～${READ_MAX_MAX_CHARS}。` +
+      `返回内容的最大字符数，默认 ${READ_DEFAULT_MAX_CHARS}，范围 ${READ_MIN_MAX_CHARS}～${READ_MAX_MAX_CHARS}；低于 ${READ_MIN_MAX_CHARS} 会被直接拒绝。` +
       '看到截断提示时，把上限调大并在一次调用里重读，不要换选择器反复调用拼接结果。',
     minimum: READ_MIN_MAX_CHARS,
     maximum: READ_MAX_MAX_CHARS,

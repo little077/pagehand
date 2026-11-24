@@ -44,9 +44,23 @@ async function fetchPdfBytes(url: string): Promise<Uint8Array> {
     throw new Error(`PDF 地址无效：${url}`);
   }
 
-  const response = await fetch(url, { credentials: 'include' });
+  let response: Response;
+  try {
+    response = await fetch(url, { credentials: 'include', redirect: 'follow' });
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error('PDF 下载失败：网络不可达或地址无法访问。请检查地址后重试。');
+    }
+    throw error;
+  }
   if (!response.ok) {
     throw new Error(`下载 PDF 失败：HTTP ${response.status} ${response.statusText}`);
+  }
+
+  const requestedUrl = new URL(url);
+  const finalUrl = response.url ? new URL(response.url) : requestedUrl;
+  if (finalUrl.origin !== requestedUrl.origin) {
+    throw new Error('PDF 地址跳转到了其他网站，已停止读取。请直接打开最终 PDF 地址后重试。');
   }
 
   const contentType = response.headers.get('content-type');

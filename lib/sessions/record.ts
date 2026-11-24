@@ -1,4 +1,4 @@
-import type { ChatItem } from '@/lib/ipc/protocol';
+import type { ChatItem, DebugTrace, TraceEntry } from '@/lib/ipc/protocol';
 
 /** 默认标题取首条用户消息的前多少个字符（按码点切，emoji 不会被切坏）。 */
 export const PROMPT_TITLE_MAX_CHARS = 20;
@@ -32,6 +32,10 @@ export interface SessionRecord {
   items: ChatItem[];
   /** pi 的 AgentMessage 原样序列化，不含开头的 system 消息。 */
   messages: unknown[];
+  /** 运行记录面板的事件时间线；旧记录没有这个字段时按空处理。 */
+  trace?: TraceEntry[];
+  /** 结构化诊断；只在 debug 模式采集，旧记录没有这个字段时为 null。 */
+  debugTrace?: DebugTrace | null;
 }
 
 export interface SessionSummary {

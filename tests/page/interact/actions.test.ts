@@ -4,6 +4,58 @@ import { mount, resetPage, stubTopElement } from './support';
 
 beforeEach(resetPage);
 
+describe('interact 授权目标复核', () => {
+  it('注入前发现网站已变化就停止操作', async () => {
+    mount('<button id="go">继续</button>');
+    const button = document.querySelector('#go') as HTMLButtonElement;
+    let clicks = 0;
+    button.addEventListener('click', () => {
+      clicks += 1;
+    });
+    stubTopElement(button);
+
+    const result = await runInteraction({
+      phase: 'act',
+      action: 'click',
+      selector: '#go',
+      expectedOrigin: 'https://other.example',
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'permission_target_mismatch' });
+    expect(clicks).toBe(0);
+  });
+
+  it('确认后同一选择器指向新元素时停止操作', async () => {
+    mount('<button id="target">删除项目 A</button>');
+    const probe = await runInteraction({
+      phase: 'probe',
+      action: 'click',
+      selector: '#target',
+    });
+    expect(probe.ok).toBe(true);
+
+    const replacement = document.createElement('button');
+    replacement.id = 'target';
+    replacement.textContent = '删除项目 B';
+    document.querySelector('#target')?.replaceWith(replacement);
+    let clicks = 0;
+    replacement.addEventListener('click', () => {
+      clicks += 1;
+    });
+    stubTopElement(replacement);
+
+    const result = await runInteraction({
+      phase: 'act',
+      action: 'click',
+      selector: '#target',
+      expectedTargetRef: probe.target?.ref ?? undefined,
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'permission_target_mismatch' });
+    expect(clicks).toBe(0);
+  });
+});
+
 describe('interact 动作语义', () => {
   it('fill 替换输入并触发 input 事件', async () => {
     mount('<input id="q" />');

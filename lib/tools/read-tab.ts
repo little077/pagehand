@@ -1,5 +1,12 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from 'typebox';
+import type { Browser } from 'wxt/browser';
+import {
+  requireToolTarget,
+  toolTargetErrorCode,
+  toolTargetErrorMessage,
+  toolTargetOfTab,
+} from '@/lib/agent/tool-targets';
 import { pdfRedirectMessage } from '@/lib/page/pdf-detect';
 import { READ_MODE_LABEL, readErrorCode, readErrorMessage, readPage } from '@/lib/page/reader';
 import { formatReadResultForModel } from './format';
@@ -27,7 +34,7 @@ export const readTabTool: AgentTool<typeof parameters, ReadToolDetails> = {
     '只读，不点击、不提交、不修改页面。',
   parameters,
   replay: 'safe',
-  async execute(_toolCallId, params, signal) {
+  async execute(toolCallId, params, signal) {
     if (signal?.aborted) {
       return {
         isError: true,
@@ -43,6 +50,14 @@ export const readTabTool: AgentTool<typeof parameters, ReadToolDetails> = {
         selector: params.selector,
         maxLength: params.max_length,
         frameId: params.frame_id,
+        ...(params.tab_id !== undefined
+          ? {
+              validateTarget: (tab: Browser.tabs.Tab) => {
+                const target = toolTargetOfTab(tab);
+                if (target) requireToolTarget(toolCallId, 'read_tab', target);
+              },
+            }
+          : {}),
       });
 
       return {
@@ -60,6 +75,15 @@ export const readTabTool: AgentTool<typeof parameters, ReadToolDetails> = {
         },
       };
     } catch (error) {
+      const targetCode = toolTargetErrorCode(error);
+      if (targetCode) {
+        const message = toolTargetErrorMessage(targetCode);
+        return {
+          isError: true,
+          content: [{ type: 'text', text: message }],
+          details: { error: message, code: targetCode, tabId: params.tab_id },
+        };
+      }
       if (readErrorCode(error) === 'pdf') {
         const message = pdfRedirectMessage(params.tab_id);
         return {

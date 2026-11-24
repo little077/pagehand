@@ -51,11 +51,15 @@ export interface SelectionResult {
   text: string;
   totalChars: number;
   truncated: boolean;
+  excludedSensitive: boolean;
 }
 
 export const SELECTION_MAX_CHARS = 12_000;
 
 export function formatSelectionForModel(selection: SelectionResult): string {
+  if (selection.excludedSensitive) {
+    return '当前焦点在密码、验证码或一次性密码框中，Pagehand 不会读取或返回这些内容。请让用户手动处理，或先选中其他普通文本。';
+  }
   if (!selection.text) {
     return '当前页面没有选中文本。请先让用户选中要处理的文字，或改用 read_page 读取整页。';
   }

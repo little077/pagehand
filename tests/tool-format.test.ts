@@ -33,6 +33,7 @@ const selection: SelectionResult = {
   text: '选中的第一段。',
   totalChars: 7,
   truncated: false,
+  excludedSensitive: false,
 };
 
 describe('formatSelectionForModel', () => {

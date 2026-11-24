@@ -83,6 +83,15 @@ function RunSummary({ run }: { run: DebugTraceRun }) {
             页面：{run.page.title || '（无标题）'} · {run.page.url}
           </p>
         )}
+        {run.usage && run.usage.calls > 0 && (
+          <p className="mt-1 text-[9px] tabular-nums text-ink-soft">
+            {run.usage.totalTokens > 0
+              ? `Token：${run.usage.calls} 次调用 · 输入 ${run.usage.input} · 输出 ${run.usage.output} · 合计 ${run.usage.totalTokens}${
+                  run.usage.cacheRead > 0 ? `（缓存命中 ${run.usage.cacheRead}）` : ''
+                }`
+              : `Token：${run.usage.calls} 次调用 · 供应商未返回用量`}
+          </p>
+        )}
         {run.notes.length > 0 && (
           <p className="mt-1 text-[9px] text-warning">备注：{run.notes.join('；')}</p>
         )}

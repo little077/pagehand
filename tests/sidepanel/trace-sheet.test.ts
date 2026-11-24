@@ -2,7 +2,7 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 import { TraceSheet } from '@/entrypoints/sidepanel/components/TraceSheet';
-import { beginRun, beginStep, createDebugTrace, finishStep } from '@/lib/debug/trace';
+import { addRunUsage, beginRun, beginStep, createDebugTrace, finishStep } from '@/lib/debug/trace';
 import type { DebugTrace } from '@/lib/ipc/protocol';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -26,6 +26,7 @@ function traceFixture(): DebugTrace {
     isError: false,
     summary: '找到 3 个可操作元素',
   });
+  addRunUsage(run, { input: 1200, output: 300, cacheRead: 400, totalTokens: 1900 });
   return trace;
 }
 
@@ -59,12 +60,15 @@ afterEach(() => {
 });
 
 describe('TraceSheet 开发者诊断', () => {
-  it('debug 模式显示工具链和导出按钮', async () => {
+  it('debug 模式显示工具链、Token 用量和导出按钮', async () => {
     const rendered = await renderSheet(traceFixture(), true);
     try {
       expect(rendered.container.textContent).toContain('开发者诊断');
       expect(rendered.container.textContent).toContain('导出诊断包');
       expect(rendered.container.textContent).toContain('找到 3 个可操作元素');
+      expect(rendered.container.textContent).toContain('Token：1 次调用');
+      expect(rendered.container.textContent).toContain('合计 1900');
+      expect(rendered.container.textContent).toContain('缓存命中 400');
     } finally {
       rendered.cleanup();
     }

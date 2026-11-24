@@ -1,5 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type } from 'typebox';
+import type { ToolTargetErrorCode } from '@/lib/agent/tool-targets';
 import { pdfRedirectMessage } from '@/lib/page/pdf-detect';
 import {
   READ_MODE_LABEL,
@@ -24,7 +25,7 @@ export type ReadToolDetails =
       frameCount: number;
       tabId?: number;
     }
-  | { error: string; code: ReadErrorCode | 'unknown'; tabId?: number }
+  | { error: string; code: ReadErrorCode | ToolTargetErrorCode | 'unknown'; tabId?: number }
   | { route: 'pdf'; message: string; tabId?: number };
 
 const parameters = Type.Object({ ...readExtractionParameters });

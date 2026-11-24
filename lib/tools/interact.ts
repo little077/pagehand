@@ -1,8 +1,13 @@
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core';
 import { Type } from 'typebox';
 import { type Browser, browser } from 'wxt/browser';
-import { confirmationFor } from '@/lib/agent/action-safety';
+import { confirmationFor, isMutatingAction } from '@/lib/agent/action-safety';
 import { originOfUrl } from '@/lib/agent/grants';
+import {
+  assertToolTarget,
+  toolTargetErrorMessage,
+  toolTargetOfTab,
+} from '@/lib/agent/tool-targets';
 import {
   cancelPageInteraction,
   type InteractAction,
@@ -24,6 +29,13 @@ import {
   type InteractToolErrorCode,
   toInteractDetails,
 } from './interact-format';
+import {
+  applyScrollRound,
+  createScrollLoopState,
+  formatScrollLoopMessage,
+  normalizeScrollRounds,
+  shouldStopScroll,
+} from './interact-scroll';
 
 const parameters = Type.Object({
   action: Type.Union(
@@ -95,6 +107,20 @@ const parameters = Type.Object({
   ),
   delta_x: Type.Optional(Type.Number({ description: 'scroll 的横向滚动量，默认 0。' })),
   delta_y: Type.Optional(Type.Number({ description: 'scroll 的纵向滚动量，正数向下，默认 300。' })),
+  to: Type.Optional(
+    Type.Union([Type.Literal('bottom'), Type.Literal('top')], {
+      description:
+        'scroll 的绝对目标：bottom 直接滚到最底并等待懒加载，会自动重复直到到底或达到轮数上限；top 回到顶部。给了 to 就忽略 delta_x/delta_y。',
+    }),
+  ),
+  max_rounds: Type.Optional(
+    Type.Number({
+      description:
+        'scroll + to=bottom 时最多重复多少轮“滚到底 + 等加载”，默认 120，单次调用最多约 25 秒。',
+      minimum: 1,
+      maximum: 200,
+    }),
+  ),
   state: Type.Optional(
     Type.Union(
       [
@@ -144,6 +170,8 @@ type Params = {
   option?: string;
   delta_x?: number;
   delta_y?: number;
+  to?: 'bottom' | 'top';
+  max_rounds?: number;
   state?: 'visible' | 'hidden' | 'text' | 'value' | 'url';
   value?: string;
   timeout?: number;
@@ -212,7 +240,12 @@ async function isStillActive(tabId: number): Promise<boolean> {
   return tab?.id === tabId;
 }
 
-function toPageParams(params: Params, phase: 'probe' | 'act'): InteractPageParams {
+function toPageParams(
+  params: Params,
+  phase: 'probe' | 'act',
+  expectedOrigin?: string,
+  expectedTargetRef?: string,
+): InteractPageParams {
   return {
     phase,
     action: params.action,
@@ -226,10 +259,13 @@ function toPageParams(params: Params, phase: 'probe' | 'act'): InteractPageParam
     option: params.option,
     deltaX: params.delta_x,
     deltaY: params.delta_y,
+    to: params.to,
     state: params.state,
     value: params.value,
     timeout: params.timeout,
     frameId: params.frame_id,
+    expectedOrigin,
+    expectedTargetRef,
   };
 }
 
@@ -268,6 +304,134 @@ function actionTimeout(params: Params): number {
   if (params.action !== 'wait_for') return DEFAULT_INJECT_TIMEOUT_MS;
   const wait = Math.min(30_000, Math.max(1_000, params.timeout ?? 5_000));
   return wait + 2_000;
+}
+
+const SCROLL_ROUND_TIMEOUT_MS = 5_000;
+const SCROLL_SETTLE_MS = 2_500;
+/** 单次调用最多花多久滚到底；到时间就返回进度，模型可以再调一次。 */
+const SCROLL_TIME_BUDGET_MS = 25_000;
+
+interface ScrollLoopResult {
+  page: InteractPageResult | null;
+  error?: { message: string; code: InteractToolErrorCode };
+}
+
+function numericDetail(details: Record<string, unknown>, key: string, fallback: number): number {
+  const value = details[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function textDetail(details: Record<string, unknown>, key: string): string | null {
+  const value = details[key];
+  return typeof value === 'string' && value ? value : null;
+}
+
+/**
+ * 虚拟列表/无限加载一次滚动只加载一批，必须在工具内循环到“到底且不再长高”。
+ * 到底但还在转圈不等于没有更多；只有出现“没有更多”或彻底安静才算结束。
+ */
+async function scrollToBottom(
+  tabId: number,
+  frameId: number,
+  params: Params,
+  signal: AbortSignal | undefined,
+  expectedOrigin?: string,
+  expectedTargetRef?: string,
+): Promise<ScrollLoopResult> {
+  const maxRounds = normalizeScrollRounds(params.max_rounds);
+  const startedAt = Date.now();
+  let state = createScrollLoopState();
+  let last: InteractPageResult | null = null;
+  let initialHeight: number | null = null;
+  let lastHeight = 0;
+  let noGrowthMs = 0;
+
+  while (state.rounds < maxRounds && Date.now() - startedAt < SCROLL_TIME_BUDGET_MS) {
+    if (signal?.aborted) {
+      return {
+        page: null,
+        error: { message: '操作已停止；已经滚动的部分保留在页面上。', code: 'aborted' },
+      };
+    }
+    if (!(await isStillActive(tabId))) {
+      return {
+        page: null,
+        error: { message: '当前标签页已经切换，滚动已停止。', code: 'aborted' },
+      };
+    }
+    let page: InteractPageResult;
+    try {
+      page = await injectAction(
+        tabId,
+        frameId,
+        {
+          ...toPageParams(params, 'act', expectedOrigin, expectedTargetRef),
+          settleMs: SCROLL_SETTLE_MS,
+        },
+        SCROLL_ROUND_TIMEOUT_MS,
+      );
+    } catch (error) {
+      return {
+        page: null,
+        error: { message: `滚动失败：${errorMessage(error)}。`, code: 'inject_failed' },
+      };
+    }
+    if (!page.ok) return { page };
+    last = page;
+
+    const details = page.details;
+    const height = numericDetail(details, 'scroll_height', 0);
+    if (initialHeight === null) {
+      initialHeight = numericDetail(details, 'before_height', height);
+    }
+    lastHeight = height;
+    const grew = details.grew === true;
+    if (!grew) noGrowthMs += numericDetail(details, 'waited_ms', 0);
+
+    state = applyScrollRound(state, {
+      atBottom: details.at_bottom === true,
+      grew,
+      changed: page.changed,
+      loading: details.loading === true,
+      endMarker: textDetail(details, 'end_marker'),
+      at: Date.now(),
+    });
+    if (shouldStopScroll(state)) break;
+  }
+
+  if (!last) {
+    return { page: null, error: { message: '没有拿到滚动结果。', code: 'unknown' } };
+  }
+
+  const outcome = state.outcome ?? 'budget_exhausted';
+  const finalState = { ...state, outcome };
+  const atBottom = last.details.at_bottom === true;
+  const distance = numericDetail(last.details, 'distance_bottom', 0);
+  const gained = initialHeight === null ? 0 : Math.max(0, lastHeight - initialHeight);
+  return {
+    page: {
+      ...last,
+      changed: state.changed,
+      message: formatScrollLoopMessage(finalState, {
+        atBottom,
+        distance,
+        gained,
+        loadingLabel: textDetail(last.details, 'loading_label'),
+        noGrowthMs,
+        endMarker: textDetail(last.details, 'end_marker'),
+      }),
+      details: {
+        ...last.details,
+        to: 'bottom',
+        rounds: state.rounds,
+        at_bottom: atBottom,
+        distance_bottom: distance,
+        height_gain: gained,
+        outcome,
+        no_growth_ms: noGrowthMs,
+      },
+    },
+  };
 }
 
 function enqueue<T>(tabId: number, task: () => Promise<T>): Promise<T> {
@@ -443,6 +607,9 @@ async function performAction(
   signal: AbortSignal | undefined,
 ): Promise<AgentToolResult<InteractDetails>> {
   if (signal?.aborted) return errorResult('操作已取消。', 'aborted');
+  if (params.to && params.action !== 'scroll') {
+    return errorResult('to 参数只用于 scroll 动作。', 'unsupported_action');
+  }
 
   const [tab] = await browser.tabs.query({ active: true, lastFocusedWindow: true });
   if (!tab?.id) return errorResult('找不到当前标签页，请先打开一个网页再试。', 'no_tab');
@@ -454,17 +621,28 @@ async function performAction(
   }
 
   const tabId = tab.id;
+  let expectedOrigin: string | undefined;
+  if (isMutatingAction(params.action)) {
+    const target = toolTargetOfTab(tab);
+    const code = target
+      ? assertToolTarget(toolCallId, 'interact', target)
+      : 'permission_target_missing';
+    if (code) return errorResult(toolTargetErrorMessage(code), code);
+    expectedOrigin = target?.origin ?? undefined;
+  }
+
   // 只要开始一次操作，下一次 inspect 就应该重新看页面，不能复用旧缓存。
   invalidateInspectCache(tabId);
   const frameId = normalizeFrameId(params.frame_id);
   return enqueue(tabId, async () => {
     let probe: InteractPageResult | null = null;
+    let expectedTargetRef: string | undefined;
     if (params.action !== 'wait_for') {
       try {
         probe = await injectAction(
           tabId,
           frameId,
-          toPageParams(params, 'probe'),
+          toPageParams(params, 'probe', expectedOrigin),
           DEFAULT_INJECT_TIMEOUT_MS,
         );
       } catch (error) {
@@ -483,6 +661,10 @@ async function performAction(
         );
       }
       if (signal?.aborted) return errorResult('操作已取消。', 'aborted');
+      expectedTargetRef =
+        params.ref || params.selector || params.x !== undefined || params.y !== undefined
+          ? (probe.target?.ref ?? undefined)
+          : undefined;
       if (!(await isStillActive(tabId))) {
         return errorResult('当前标签页已经切换，操作已取消。请切回目标页面再试。', 'aborted');
       }
@@ -512,7 +694,30 @@ async function performAction(
     }
     const latest = await browser.tabs.get(tabId).catch(() => null);
     if (!latest || latest.url !== (tab.url ?? '')) {
+      if (isMutatingAction(params.action)) {
+        const latestTarget = toolTargetOfTab(latest);
+        const code = latestTarget
+          ? assertToolTarget(toolCallId, 'interact', latestTarget)
+          : 'permission_target_mismatch';
+        if (code) return errorResult(toolTargetErrorMessage(code), code);
+      }
       return errorResult('页面在检查后已经跳转或关闭。请重新 inspect 后再操作。', 'ref_stale');
+    }
+
+    if (params.action === 'scroll' && params.to === 'bottom') {
+      const loop = await scrollToBottom(
+        tabId,
+        frameId,
+        params,
+        signal,
+        expectedOrigin,
+        expectedTargetRef,
+      );
+      if (!loop.page) {
+        return errorResult(loop.error?.message ?? '滚动失败。', loop.error?.code ?? 'unknown');
+      }
+      invalidateInspectCache(tabId);
+      return finish({ page: loop.page, frame_id: frameId, navigation: 'none', new_tab: null });
     }
 
     const beforeUrl = tab.url ?? '';
@@ -525,17 +730,23 @@ async function performAction(
     if (signal) signal.addEventListener('abort', onAbort, { once: true });
 
     try {
-      const act = injectAction(tabId, frameId, toPageParams(params, 'act'), actionTimeout(params));
+      const act = injectAction(
+        tabId,
+        frameId,
+        toPageParams(params, 'act', expectedOrigin, expectedTargetRef),
+        actionTimeout(params),
+      );
+      const actResult = act.then(
+        (value) => ({ kind: 'page' as const, value }),
+        (error: unknown) => ({ kind: 'error' as const, error }),
+      );
       const raced = await Promise.race([
-        act.then(
-          (value) => ({ kind: 'page' as const, value }),
-          (error: unknown) => ({ kind: 'error' as const, error }),
-        ),
+        actResult,
         watch.started.then(() => ({ kind: 'nav' as const })),
       ]);
-      if (raced.kind === 'page') page = raced.value;
-      else if (raced.kind === 'error') failure = raced.error;
-      else void act.catch(() => undefined);
+      const settled = raced.kind === 'nav' ? await actResult : raced;
+      if (settled.kind === 'page') page = settled.value;
+      else failure = settled.error;
     } finally {
       if (signal) signal.removeEventListener('abort', onAbort);
       watch.stop();
@@ -586,7 +797,8 @@ async function performAction(
       }
     }
 
-    if (!page.ok && (navigated || newTab)) {
+    const authorizationFailure = page.code === 'permission_target_mismatch';
+    if (!page.ok && (navigated || newTab) && !authorizationFailure) {
       page = {
         ...page,
         ok: true,
@@ -605,6 +817,7 @@ export const interactTool: AgentTool<typeof parameters, InteractDetails> = {
   label: '操作页面',
   description:
     '在当前活动标签页里执行一次页面操作：click 点击、fill 替换输入、type 追加输入、press 按键、select 选原生下拉、check/uncheck 勾选、hover 悬停、scroll 滚动、wait_for 等条件。' +
+    '要滚到列表/评论区最底时，用 scroll + to="bottom"：工具会自动重复“滚到底 + 等懒加载”，一次调用完成；不要用多次 delta_y 硬滚。' +
     '优先用 inspect 返回的 ref 定位；selector 必须只匹配一个元素；坐标只留给 Canvas/地图。' +
     '只操作当前活动标签页，不操作后台标签页、浏览器内部页、跨域 iframe 或 shadow DOM 内部。' +
     '执行前会检查可见、稳定、遮挡、禁用、inert 和可编辑；执行后会观察 URL、DOM 和状态变化，并如实返回。' +
